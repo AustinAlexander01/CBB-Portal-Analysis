@@ -518,7 +518,7 @@ make_supabase_con <- function() {
   }
   DBI::dbConnect(
     RPostgres::Postgres(),
-    host = "aws-1-us-east-2.pooler.supabase.com",
+    host = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
     port = 5432L,
     dbname = "postgres",
     user = "postgres.mkrllsjvjliyxgukwfme",
@@ -590,7 +590,7 @@ supabase_pool <- tryCatch({
   if (!nzchar(pw)) stop("SUPABASE_DB_PASSWORD not set")
   pool::dbPool(
     drv        = RPostgres::Postgres(),
-    host       = "aws-1-us-east-2.pooler.supabase.com",
+    host       = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
     port       = 5432L,
     dbname     = "postgres",
     user       = "postgres.mkrllsjvjliyxgukwfme",
