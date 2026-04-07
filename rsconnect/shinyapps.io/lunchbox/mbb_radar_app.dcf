@@ -1,0 +1,13 @@
+name: mbb_radar_app
+title: mbb_radar_app
+username: lunchbox
+account: lunchbox
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16858455
+bundleId: 11814041
+url: https://lunchbox.shinyapps.io/mbb_radar_app/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: data
