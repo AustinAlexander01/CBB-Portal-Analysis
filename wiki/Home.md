@@ -22,17 +22,17 @@ The app connects to a Supabase PostgreSQL database containing player stats and c
 
 | Page | Description | Audience |
 |---|---|---|
-| [[App Features]] | Walkthrough of every feature in the app | Users & analysts |
-| [[Data Dictionary]] | Every database column explained | Developers & analysts |
-| [[Architecture and Local Dev]] | How to run the app locally and how the code is structured | Collaborators |
-| [[Data Pipeline]] | How player data is built and loaded into Supabase | Collaborators |
+| [App Features](App-Features) | Walkthrough of every feature in the app | Users & analysts |
+| [Data Dictionary](Data-Dictionary) | Every database column explained | Developers & analysts |
+| [Architecture and Local Dev](Architecture-and-Local-Dev) | How to run the app locally and how the code is structured | Collaborators |
+| [Data Pipeline](Data-Pipeline) | How player data is built and loaded into Supabase | Collaborators |
 
 ---
 
 ## Quick Links
 
-- **Run locally**: See [[Architecture and Local Dev]]
-- **Understand the columns**: See [[Data Dictionary]]
-- **Learn what the filters do**: See [[App Features]]
-- **Set up the data pipeline**: See [[Data Pipeline]]
+- **Run locally**: See [Architecture and Local Dev](Architecture-and-Local-Dev)
+- **Understand the columns**: See [Data Dictionary](Data-Dictionary)
+- **Learn what the filters do**: See [App Features](App-Features)
+- **Set up the data pipeline**: See [Data Pipeline](Data-Pipeline)
 - **Full AI-readable onboarding doc**: [`COLLABORATOR_GUIDE.md`](../COLLABORATOR_GUIDE.md) in the repo root
