@@ -1,4 +1,4 @@
--# server.R
+# server.R
 # STARTUP PERFORMANCE IMPROVEMENTS:
 # - Lazy-load rarely-used packages: ggtext, fmsb, gt (loaded on-demand via requireNamespace)
 # - Radar-only runtime: single-game + season-window modules removed
@@ -14,6 +14,7 @@
 # Required packages (keep minimal but sufficient for startup)
 # Lazy-loaded on-demand: ggtext, fmsb, gt (only used in specific outputrenderers)
 # --------------------------------------------------------------------------------
+
 suppressPackageStartupMessages({
   library(shiny)
   library(dplyr)
