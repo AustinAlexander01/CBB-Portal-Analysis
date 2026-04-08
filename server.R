@@ -522,7 +522,7 @@ make_supabase_con <- function() {
     dbname = "postgres",
     user = "postgres.mkrllsjvjliyxgukwfme",
     password = pw,
-    sslmode = "require"
+    sslmode = "prefer"
   )
 }
 
@@ -594,7 +594,7 @@ supabase_pool <- tryCatch({
     dbname     = "postgres",
     user       = "postgres.mkrllsjvjliyxgukwfme",
     password   = pw,
-    sslmode    = "require",
+    sslmode    = "prefer",
     minSize    = 1L,
     maxSize    = 5L,
     idleTimeout = 300
