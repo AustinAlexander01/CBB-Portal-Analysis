@@ -519,7 +519,7 @@ SUPABASE_KEY <- local({
   if (nzchar(jwt)) jwt else Sys.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", unset = "")
 })
 
-supabase_get <- function(table, select = "*", filters = list(), limit = NULL, order = NULL) {
+supabase_get <- function(table, select = "*", filters = list(), limit = NULL, order = NULL, offset = NULL) {
   if (!nzchar(SUPABASE_KEY)) stop("SUPABASE_ANON_KEY is not set")
   req <- httr2::request(paste0(SUPABASE_REST_URL, "/", table)) |>
     httr2::req_headers(
@@ -529,10 +529,27 @@ supabase_get <- function(table, select = "*", filters = list(), limit = NULL, or
     ) |>
     httr2::req_url_query(select = select)
   if (length(filters) > 0) req <- do.call(httr2::req_url_query, c(list(req), filters))
-  if (!is.null(limit)) req <- httr2::req_url_query(req, limit = limit)
-  if (!is.null(order)) req <- httr2::req_url_query(req, order = order)
+  if (!is.null(limit))  req <- httr2::req_url_query(req, limit  = limit)
+  if (!is.null(offset)) req <- httr2::req_url_query(req, offset = offset)
+  if (!is.null(order))  req <- httr2::req_url_query(req, order  = order)
   resp <- httr2::req_perform(req)
   httr2::resp_body_json(resp, simplifyVector = TRUE)
+}
+
+# Fetch all rows from a table, paginating automatically past PostgREST's row limit.
+supabase_get_all <- function(table, select = "*", filters = list(), page_size = 1000L) {
+  offset <- 0L
+  chunks <- list()
+  repeat {
+    chunk <- supabase_get(table, select = select, filters = filters,
+                          limit = page_size, offset = offset)
+    if (!is.data.frame(chunk) || nrow(chunk) == 0L) break
+    chunks[[length(chunks) + 1L]] <- chunk
+    if (nrow(chunk) < page_size) break
+    offset <- offset + page_size
+  }
+  if (length(chunks) == 0L) return(data.frame())
+  do.call(rbind, chunks)
 }
 
 # ---------------------------------------------------------------------------
@@ -610,7 +627,7 @@ load_player_stats_source <- function() {
       fetch_cols <- intersect(TABLE_DISPLAY_COLS, all_cols)
       if (length(fetch_cols) == 0) fetch_cols <- all_cols  # safe fallback
 
-      df <- supabase_get("basketball_players", select = paste(sprintf('"%s"', fetch_cols), collapse = ","))
+      df <- supabase_get_all("basketball_players", select = paste(sprintf('"%s"', fetch_cols), collapse = ","))
       lu <- Sys.Date()
 
       if (cache_hours > 0) {
