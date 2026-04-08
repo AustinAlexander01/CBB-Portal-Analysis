@@ -12,9 +12,8 @@ WORKDIR /app
 
 COPY renv.lock renv.lock
 COPY renv/ renv/
-COPY .Rprofile .Rprofile
 
-RUN R -e "renv::restore()"
+RUN R -e "renv::restore(project = '/app')"
 
 COPY app.R app.R
 COPY ui.R ui.R
