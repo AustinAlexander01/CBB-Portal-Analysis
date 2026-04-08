@@ -715,6 +715,8 @@ compute_app_data <- function() {
     stop("Supabase basketball_players is missing required column: Name")
   }
 
+  player_stats_all <- dplyr::distinct(player_stats_all)
+
   player_stats_all$Name <- as.character(player_stats_all$Name)
   for (nm in intersect(c("Team", "Role", "Player"), names(player_stats_all))) {
     player_stats_all[[nm]] <- as.character(player_stats_all[[nm]])
