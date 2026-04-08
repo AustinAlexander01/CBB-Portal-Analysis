@@ -518,7 +518,7 @@ make_supabase_con <- function() {
   DBI::dbConnect(
     RPostgres::Postgres(),
     host = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
-    port = 5432L,
+    port = as.integer(Sys.getenv("SUPABASE_PORT", unset = "6543")),
     dbname = "postgres",
     user = "postgres.mkrllsjvjliyxgukwfme",
     password = pw,
@@ -590,7 +590,7 @@ supabase_pool <- tryCatch({
   pool::dbPool(
     drv        = RPostgres::Postgres(),
     host       = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
-    port       = 5432L,
+    port       = as.integer(Sys.getenv("SUPABASE_PORT", unset = "6543")),
     dbname     = "postgres",
     user       = "postgres.mkrllsjvjliyxgukwfme",
     password   = pw,
