@@ -515,8 +515,8 @@ SUPABASE_REST_URL <- "https://mkrllsjvjliyxgukwfme.supabase.co/rest/v1"
 # Use the legacy anon JWT for PostgREST — the publishable key is NOT a JWT and
 # cannot be used as a Bearer token in Authorization headers.
 SUPABASE_KEY <- local({
-  jwt <- Sys.getenv("SUPABASE_ANON_KEY", unset = "")
-  if (nzchar(jwt)) jwt else Sys.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", unset = "")
+  jwt <- Sys.getenv("SUPABASE_JWT", unset = "")
+  if (nzchar(jwt)) jwt else Sys.getenv("SUPABASE_ANON_KEY", unset = "")
 })
 
 supabase_get <- function(table, select = "*", filters = list(), limit = NULL, order = NULL, offset = NULL) {
