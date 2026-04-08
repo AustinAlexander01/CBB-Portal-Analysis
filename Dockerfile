@@ -20,6 +20,7 @@ COPY server.R server.R
 COPY plotly_helpers.R plotly_helpers.R
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 COPY .Renviron /home/shiny/.Renviron
+RUN echo "bust-cache-v3"
 ARG SUPABASE_DB_PASSWORD
 ARG SUPABASE_HOST
 ARG SUPABASE_USER
