@@ -18,9 +18,7 @@ COPY app.R app.R
 COPY ui.R ui.R
 COPY server.R server.R
 COPY plotly_helpers.R plotly_helpers.R
-COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 COPY .Renviron /home/shiny/.Renviron
-# Pre-bake the basketball_players cache at build time
 RUN R -e "source('server.R'); saveRDS(compute_app_data(), '.player_stats_cache.rds')"
 EXPOSE 3838
-CMD ["/usr/bin/shiny-server"]
+CMD ["R", "-e", "shiny::runApp('/app', host='0.0.0.0', port=3838)"]
