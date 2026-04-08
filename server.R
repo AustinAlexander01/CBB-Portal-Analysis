@@ -512,20 +512,23 @@ coerce_to_date <- function(x) {
 }
 
 make_supabase_con <- function() {
+  host <- Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com")
+  user <- Sys.getenv("SUPABASE_USER", unset = "postgres.mkrllsjvjliyxgukwfme")
   pw <- Sys.getenv("SUPABASE_DB_PASSWORD", unset = "")
   if (!nzchar(pw)) {
     stop("SUPABASE_DB_PASSWORD environment variable is not set.")
   }
   DBI::dbConnect(
     RPostgres::Postgres(),
-    host = "aws-1-us-east-2.pooler.supabase.com",
+    host = host,
     port = 5432L,
     dbname = "postgres",
-    user = "postgres.mkrllsjvjliyxgukwfme",
+    user = user,
     password = pw,
     sslmode = "require"
   )
 }
+
 
 supabase_last_update <- function(con, table_name = "basketball_players") {
   cols <- DBI::dbGetQuery(
@@ -585,27 +588,31 @@ benchmark_names <- c(
 # Persistent connection pool — shared across all sessions.
 # Replaces per-query make_supabase_con() calls in reactive paths.
 # ---------------------------------------------------------------------------
-supabase_pool <- tryCatch({
+supabase_pool <- {
+  host <- Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com")
+  user <- Sys.getenv("SUPABASE_USER", unset = "postgres.mkrllsjvjliyxgukwfme")
   pw <- Sys.getenv("SUPABASE_DB_PASSWORD", unset = "")
-  if (!nzchar(pw)) stop("SUPABASE_DB_PASSWORD not set")
-  pool::dbPool(
-    drv        = RPostgres::Postgres(),
-    host       = "aws-1-us-east-2.pooler.supabase.com",
-    port       = 5432L,
-    dbname     = "postgres",
-    user       = "postgres.mkrllsjvjliyxgukwfme",
-    password   = pw,
-    sslmode    = "require",
-    minSize    = 1L,
-    maxSize    = 5L,
-    idleTimeout = 300
-  )
-}, error = function(e) {
-  warning("Could not create Supabase pool: ", conditionMessage(e))
-  NULL
-})
-if (!is.null(supabase_pool)) {
-  shiny::onStop(function() pool::poolClose(supabase_pool))
+  
+  if (!nzchar(pw)) {
+    stop("SUPABASE_DB_PASSWORD not set")
+  }
+  
+  tryCatch({
+    pool::dbPool(
+      drv        = RPostgres::Postgres(),
+      host       = host,
+      port       = 5432L,
+      dbname     = "postgres",
+      user       = user,
+      password   = pw,
+      sslmode    = "require",
+      minSize    = 1L,
+      maxSize    = 5L,
+      idleTimeout = 300
+    )
+  }, error = function(e) {
+    stop("Failed to create Supabase pool: ", conditionMessage(e))
+  })
 }
 
 # Fetch actual DB column names once at startup so build_table_query() can
