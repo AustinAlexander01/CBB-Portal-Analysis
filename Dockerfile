@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     libglpk-dev \
     cmake \
     libicu-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN R -e "install.packages('renv', repos='https://cran.rstudio.com/')"
