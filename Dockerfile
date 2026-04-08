@@ -26,4 +26,4 @@ COPY server.R server.R
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 
 EXPOSE 3838
-CMD ["/bin/sh", "-c", "Rscript -e \"library(httr2); key=nchar(Sys.getenv('SUPABASE_ANON_KEY')); cat('=== REST TEST ===\\nKey length:',key,'\\n'); jwt=Sys.getenv('SUPABASE_ANON_KEY'); tryCatch({ resp <- request('https://mkrllsjvjliyxgukwfme.supabase.co/rest/v1/basketball_players') |> req_headers(apikey=jwt, Authorization=paste('Bearer',jwt)) |> req_url_query(select='Name', limit=1) |> req_perform(); cat('REST CONNECTION OK\\n') }, error=function(e) cat('REST CONNECTION FAILED:', conditionMessage(e), '\\n'))\" 2>&1 && exec /usr/bin/shiny-server"]
+CMD ["/bin/sh", "-c", "echo \"SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}\" > /home/shiny/.Renviron && echo \"PLAYER_STATS_CACHE_HOURS=${PLAYER_STATS_CACHE_HOURS}\" >> /home/shiny/.Renviron && exec /usr/bin/shiny-server"]
