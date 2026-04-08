@@ -1,4 +1,4 @@
-# server.R
+-# server.R
 # STARTUP PERFORMANCE IMPROVEMENTS:
 # - Lazy-load rarely-used packages: ggtext, fmsb, gt (loaded on-demand via requireNamespace)
 # - Radar-only runtime: single-game + season-window modules removed
@@ -484,13 +484,7 @@ build_composite_hover <- function(player_name,
 # ------------------------------------------------------------------------------
 rotation_cutoff <- 15
 is_benchmark_row <- function(nm) {
-  nm %in% c(
-    "001 - Averages",
-    "D1 Avg - Frontcourt", "D1 Avg - Backcourt", "D1 Avg - Wings",
-    "D1 Avg (career) - Frontcourt", "D1 Avg (career) - Backcourt", "D1 Avg (career) - Wings",
-    "1st Rder Avg - Frontcourt", "1st Rder Avg - Backcourt", "1st Rder Avg - Wings",
-    "1st Rder Avg (career) - Frontcourt", "1st Rder Avg (career) - Backcourt", "1st Rder Avg (career) - Wings"
-  )
+  nm %in% benchmark_names
 }
 
 coerce_to_date <- function(x) {
@@ -576,14 +570,31 @@ supabase_last_update <- function(con, table_name = "basketball_players") {
 # Used for profile labels and radar chart comparisons.
 # ---------------------------------------------------------------------------
 benchmark_names <- c(
-  "001 - Averages",
-  "D1 Avg - Frontcourt", "D1 Avg - Backcourt", "D1 Avg - Wings",
-  "D1 Avg (career) - Frontcourt", "D1 Avg (career) - Backcourt", "D1 Avg (career) - Wings",
-  "1st Rder Avg - Frontcourt", "1st Rder Avg - Backcourt", "1st Rder Avg - Wings",
-  "1st Rder Avg (career) - Frontcourt", "1st Rder Avg (career) - Backcourt",
-  "1st Rder Avg (career) - Wings"
+  "D1 Avg (career) - C",
+  "D1 Avg (career) - Combo G",
+  "D1 Avg (career) - PF/C",
+  "D1 Avg (career) - Pure PG",
+  "D1 Avg (career) - Scoring PG",
+  "D1 Avg (career) - Stretch 4",
+  "D1 Avg (career) - Wing F",
+  "D1 Avg (career) - Wing G",
+  "1st Rder Avg (career) - C",
+  "1st Rder Avg (career) - Combo G",
+  "1st Rder Avg (career) - PF/C",
+  "1st Rder Avg (career) - Pure PG",
+  "1st Rder Avg (career) - Scoring PG",
+  "1st Rder Avg (career) - Stretch 4",
+  "1st Rder Avg (career) - Wing F",
+  "1st Rder Avg (career) - Wing G",
+  "2nd Rder Avg (career) - C",
+  "2nd Rder Avg (career) - Combo G",
+  "2nd Rder Avg (career) - PF/C",
+  "2nd Rder Avg (career) - Pure PG",
+  "2nd Rder Avg (career) - Scoring PG",
+  "2nd Rder Avg (career) - Stretch 4",
+  "2nd Rder Avg (career) - Wing F",
+  "2nd Rder Avg (career) - Wing G"
 )
-
 # ---------------------------------------------------------------------------
 # Persistent connection pool — shared across all sessions.
 # Replaces per-query make_supabase_con() calls in reactive paths.
