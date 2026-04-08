@@ -512,10 +512,15 @@ coerce_to_date <- function(x) {
 # Supabase REST client — replaces DBI/RPostgres + pool (no password needed)
 # ---------------------------------------------------------------------------
 SUPABASE_REST_URL <- "https://mkrllsjvjliyxgukwfme.supabase.co/rest/v1"
-SUPABASE_KEY      <- Sys.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", unset = "")
+# Use the legacy anon JWT for PostgREST — the publishable key is NOT a JWT and
+# cannot be used as a Bearer token in Authorization headers.
+SUPABASE_KEY <- local({
+  jwt <- Sys.getenv("SUPABASE_ANON_KEY", unset = "")
+  if (nzchar(jwt)) jwt else Sys.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", unset = "")
+})
 
 supabase_get <- function(table, select = "*", filters = list(), limit = NULL, order = NULL) {
-  if (!nzchar(SUPABASE_KEY)) stop("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY is not set")
+  if (!nzchar(SUPABASE_KEY)) stop("SUPABASE_ANON_KEY is not set")
   req <- httr2::request(paste0(SUPABASE_REST_URL, "/", table)) |>
     httr2::req_headers(
       apikey        = SUPABASE_KEY,
@@ -605,7 +610,7 @@ load_player_stats_source <- function() {
       fetch_cols <- intersect(TABLE_DISPLAY_COLS, all_cols)
       if (length(fetch_cols) == 0) fetch_cols <- all_cols  # safe fallback
 
-      df <- supabase_get("basketball_players", select = paste(fetch_cols, collapse = ","))
+      df <- supabase_get("basketball_players", select = paste(sprintf('"%s"', fetch_cols), collapse = ","))
       lu <- Sys.Date()
 
       if (cache_hours > 0) {
@@ -2651,7 +2656,7 @@ shinyServer(function(input, output, session) {
       name_list <- paste(sprintf('"%s"', player_names), collapse = ",")
       df <- supabase_get(
         "basketball_players",
-        select  = paste(fetch_cols, collapse = ","),
+        select  = paste(sprintf('"%s"', fetch_cols), collapse = ","),
         filters = list(Name = paste0("in.(", name_list, ")"))
       )
 
