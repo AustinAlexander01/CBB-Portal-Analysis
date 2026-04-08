@@ -23,8 +23,6 @@ RUN R -e "renv::restore(project = '/app')"
 COPY app.R app.R
 COPY ui.R ui.R
 COPY server.R server.R
-COPY plotly_helpers.R plotly_helpers.R
-
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 
 EXPOSE 3838

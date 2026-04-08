@@ -469,41 +469,6 @@
       "NeedsCompilation": "yes",
       "Repository": "CRAN"
     },
-    "bigballR": {
-      "Package": "bigballR",
-      "Version": "0.1.0",
-      "Source": "GitHub",
-      "Type": "Package",
-      "Title": "NCAA Basketball Data Analysis Functionality",
-      "Author": "Jake Flancer",
-      "Maintainer": "Jake Flancer <jflancer@wharton.upenn.edu>",
-      "Description": "This package gives users the ability to work with NCAA Basketball data in a clean and detailed manner. The functions included can retrieve and manipulate NCAA play-by-play data, giving users a variety of ways to find insights about their favorite players and teams. An especially important feature is the ability to report who is on the court at each event in the play-by-play, opening up many possible areas of analysis.",
-      "License": "MIT + file LICENSE",
-      "Encoding": "UTF-8",
-      "Depends": [
-        "R (>= 4.1.0)"
-      ],
-      "LazyData": "true",
-      "Imports": [
-        "dplyr",
-        "XML",
-        "stringr",
-        "magrittr",
-        "ggplot2",
-        "igraph",
-        "ggraph",
-        "gtools",
-        "rvest"
-      ],
-      "RoxygenNote": "7.3.2",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteRepo": "bigballR",
-      "RemoteUsername": "jflancer",
-      "RemoteRef": "HEAD",
-      "RemoteSha": "0bac7cf11a1c2142ad1b6cb9a11461ee0bbd6b9e",
-      "NeedsCompilation": "no"
-    },
     "bit": {
       "Package": "bit",
       "Version": "4.6.0",

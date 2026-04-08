@@ -133,7 +133,6 @@ sanitize_composite_id <- function(x) {
   paste0("comp__", gsub("[^A-Za-z0-9]+", "_", as.character(x)))
 }
 
-source("plotly_helpers.R")
 
 
 # --------------------------------------------------------------------------------
