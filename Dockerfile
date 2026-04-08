@@ -26,4 +26,4 @@ COPY server.R server.R
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 
 EXPOSE 3838
-CMD ["/usr/bin/shiny-server"]
+CMD ["/bin/sh", "-c", "Rscript -e \"library(DBI); library(RPostgres); cat('=== DB TEST ===\\n'); tryCatch({ con <- dbConnect(Postgres(), host=Sys.getenv('SUPABASE_HOST','aws-1-us-east-2.pooler.supabase.com'), port=5432L, dbname='postgres', user='postgres.mkrllsjvjliyxgukwfme', password=Sys.getenv('SUPABASE_DB_PASSWORD'), sslmode='require'); cat('DB CONNECTION OK\\n'); dbDisconnect(con) }, error=function(e) cat('DB CONNECTION FAILED:', conditionMessage(e), '\\n'))\" 2>&1 && exec /usr/bin/shiny-server"]
