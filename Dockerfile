@@ -24,6 +24,7 @@ COPY app.R app.R
 COPY ui.R ui.R
 COPY server.R server.R
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
+COPY .Renviron /home/shiny/.Renviron
 
 EXPOSE 3838
-CMD ["/bin/sh", "-c", "echo \"SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}\" > /home/shiny/.Renviron && echo \"PLAYER_STATS_CACHE_HOURS=${PLAYER_STATS_CACHE_HOURS}\" >> /home/shiny/.Renviron && exec /usr/bin/shiny-server"]
+CMD ["/usr/bin/shiny-server"]
