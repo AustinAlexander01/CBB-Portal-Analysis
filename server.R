@@ -24,9 +24,7 @@ suppressPackageStartupMessages({
   library(scales)
   library(forcats)
   library(ggplot2)
-  library(DBI)
-  library(RPostgres)
-  library(pool)
+  library(httr2)
   # ggtext, fmsb loaded on-demand via requireNamespace (rich text in viz only)
   library(reactable)
   library(memoise)
@@ -510,61 +508,26 @@ coerce_to_date <- function(x) {
   suppressWarnings(as.Date(as.POSIXct(x, tz = "UTC")))
 }
 
-make_supabase_con <- function() {
-  pw <- Sys.getenv("SUPABASE_DB_PASSWORD", unset = "")
-  if (!nzchar(pw)) {
-    stop("SUPABASE_DB_PASSWORD environment variable is not set.")
-  }
-  DBI::dbConnect(
-    RPostgres::Postgres(),
-    host = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
-    port = as.integer(Sys.getenv("SUPABASE_PORT", unset = "6543")),
-    dbname = "postgres",
-    user = "postgres.mkrllsjvjliyxgukwfme",
-    password = pw,
-    sslmode = "prefer"
-  )
-}
+# ---------------------------------------------------------------------------
+# Supabase REST client — replaces DBI/RPostgres + pool (no password needed)
+# ---------------------------------------------------------------------------
+SUPABASE_REST_URL <- "https://mkrllsjvjliyxgukwfme.supabase.co/rest/v1"
+SUPABASE_KEY      <- Sys.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY", unset = "")
 
-supabase_last_update <- function(con, table_name = "basketball_players") {
-  cols <- DBI::dbGetQuery(
-    con,
-    sprintf(
-      "SELECT column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = '%s'",
-      table_name
-    )
-  )$column_name
-
-  candidates <- c(
-    "last_update", "updated_at", "updated_on", "updatedon",
-    "modified_at", "modified_on", "date_updated",
-    "load_date", "as_of_date", "ingested_at", "ingest_ts", "created_at"
-  )
-  present <- intersect(candidates, cols)
-
-  for (col in present) {
-    q <- sprintf('SELECT MAX("%s") AS value FROM "%s"', col, table_name)
-    res <- tryCatch(DBI::dbGetQuery(con, q), error = function(e) NULL)
-    if (is.null(res) || !"value" %in% names(res) || nrow(res) == 0) {
-      next
-    }
-    d <- coerce_to_date(res$value[[1]])
-    if (!is.na(d)) {
-      return(d)
-    }
-  }
-
-  # Fallback to DB current date when no timestamp-like column exists.
-  fallback <- tryCatch(DBI::dbGetQuery(con, "SELECT CURRENT_DATE AS value"), error = function(e) NULL)
-  if (!is.null(fallback) && "value" %in% names(fallback) && nrow(fallback) > 0) {
-    d <- coerce_to_date(fallback$value[[1]])
-    if (!is.na(d)) {
-      return(d)
-    }
-  }
-  Sys.Date()
+supabase_get <- function(table, select = "*", filters = list(), limit = NULL, order = NULL) {
+  if (!nzchar(SUPABASE_KEY)) stop("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY is not set")
+  req <- httr2::request(paste0(SUPABASE_REST_URL, "/", table)) |>
+    httr2::req_headers(
+      apikey        = SUPABASE_KEY,
+      Authorization = paste("Bearer", SUPABASE_KEY),
+      Accept        = "application/json"
+    ) |>
+    httr2::req_url_query(select = select)
+  if (length(filters) > 0) req <- do.call(httr2::req_url_query, c(list(req), filters))
+  if (!is.null(limit)) req <- httr2::req_url_query(req, limit = limit)
+  if (!is.null(order)) req <- httr2::req_url_query(req, order = order)
+  resp <- httr2::req_perform(req)
+  httr2::resp_body_json(resp, simplifyVector = TRUE)
 }
 
 # ---------------------------------------------------------------------------
@@ -580,45 +543,15 @@ benchmark_names <- c(
   "1st Rder Avg (career) - Wings"
 )
 
-# ---------------------------------------------------------------------------
-# Persistent connection pool — shared across all sessions.
-# Replaces per-query make_supabase_con() calls in reactive paths.
-# ---------------------------------------------------------------------------
-supabase_pool <- tryCatch({
-  pw <- Sys.getenv("SUPABASE_DB_PASSWORD", unset = "")
-  if (!nzchar(pw)) stop("SUPABASE_DB_PASSWORD not set")
-  pool::dbPool(
-    drv        = RPostgres::Postgres(),
-    host       = Sys.getenv("SUPABASE_HOST", unset = "aws-1-us-east-2.pooler.supabase.com"),
-    port       = as.integer(Sys.getenv("SUPABASE_PORT", unset = "6543")),
-    dbname     = "postgres",
-    user       = "postgres.mkrllsjvjliyxgukwfme",
-    password   = pw,
-    sslmode    = "prefer",
-    minSize    = 1L,
-    maxSize    = 5L,
-    idleTimeout = 300
-  )
-}, error = function(e) {
-  warning("Could not create Supabase pool: ", conditionMessage(e))
-  NULL
-})
-if (!is.null(supabase_pool)) {
-  shiny::onStop(function() pool::poolClose(supabase_pool))
-}
-
-# Fetch actual DB column names once at startup so build_table_query() can
-# filter TABLE_DISPLAY_COLS to only columns that exist in Supabase.
+# Discover all basketball_players columns once at startup (limit=1 fetch).
+# Used to filter TABLE_DISPLAY_COLS and to know which *_pct columns exist.
 DB_BASKETBALL_COLS <- tryCatch({
-  DBI::dbGetQuery(
-    supabase_pool,
-    "SELECT column_name FROM information_schema.columns
-     WHERE table_name = 'basketball_players' AND table_schema = 'public'"
-  )$column_name
+  names(supabase_get("basketball_players", select = "*", limit = 1))
 }, error = function(e) {
   warning("Could not fetch DB column list: ", conditionMessage(e))
-  NULL  # NULL means no filtering applied — callers must handle
+  NULL
 })
+ALL_PCT_COLS <- if (!is.null(DB_BASKETBALL_COLS)) grep("_pct$", DB_BASKETBALL_COLS, value = TRUE) else character(0)
 
 # Rebuild TABLE_DISPLAY_COLS filtered to only columns that actually exist in DB
 if (!is.null(DB_BASKETBALL_COLS)) {
@@ -661,18 +594,9 @@ load_player_stats_source <- function() {
 
   out <- tryCatch(
     {
-      con <- make_supabase_con()
-      on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-      all_cols <- DBI::dbGetQuery(
-        con,
-        "SELECT column_name
-         FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = 'basketball_players'
-         ORDER BY ordinal_position"
-      )$column_name
-      if (length(all_cols) == 0) {
-        stop("No columns found for Supabase table public.basketball_players")
+      all_cols <- DB_BASKETBALL_COLS
+      if (is.null(all_cols) || length(all_cols) == 0) {
+        stop("No columns found for Supabase table basketball_players")
       }
 
       # Select only the columns needed for the table, similarity, and profiles.
@@ -680,9 +604,9 @@ load_player_stats_source <- function() {
       # per selected player when the radar chart renders (see radar_percentile_data reactive).
       fetch_cols <- intersect(TABLE_DISPLAY_COLS, all_cols)
       if (length(fetch_cols) == 0) fetch_cols <- all_cols  # safe fallback
-      col_sql <- paste(sprintf('"%s"', fetch_cols), collapse = ", ")
-      df <- DBI::dbGetQuery(con, sprintf('SELECT %s FROM "basketball_players"', col_sql))
-      lu <- supabase_last_update(con, "basketball_players")
+
+      df <- supabase_get("basketball_players", select = paste(fetch_cols, collapse = ","))
+      lu <- Sys.Date()
 
       if (cache_hours > 0) {
         tryCatch(saveRDS(df, cache_path), error = function(e) NULL)
@@ -922,13 +846,8 @@ player_stats_all_with_composites <- app_data$player_stats_all_with_composites
 rm(app_data)
 
 portal_pids_vec <- tryCatch({
-  if (!is.null(supabase_pool)) {
-    res <- DBI::dbGetQuery(
-      supabase_pool,
-      'SELECT DISTINCT pid FROM mbb_portal_player_xref WHERE pid IS NOT NULL'
-    )
-    as.character(res$pid)
-  } else character(0)
+  res <- supabase_get("mbb_portal_player_xref", select = "pid")
+  as.character(unique(na.omit(res$pid)))
 }, error = function(e) {
   warning("Could not load portal PIDs: ", conditionMessage(e))
   character(0)
@@ -940,16 +859,13 @@ portal_pids_vec <- tryCatch({
 # chart and profile labels without re-querying the full table.
 # ---------------------------------------------------------------------------
 benchmark_data <- tryCatch({
-  if (!is.null(supabase_pool)) {
-    safe_names <- paste(sprintf("'%s'", gsub("'", "''", benchmark_names)), collapse = ", ")
-    DBI::dbGetQuery(
-      supabase_pool,
-      sprintf('SELECT * FROM "basketball_players" WHERE "Name" IN (%s)', safe_names)
-    )
-  } else {
-    # Pool not available — fall back to rows already in player_stats_all
-    player_stats_all %>% dplyr::filter(is_benchmark_row(.data$Name))
-  }
+  name_list <- paste(sprintf('"%s"', benchmark_names), collapse = ",")
+  df_bm <- supabase_get(
+    "basketball_players",
+    filters = list(Name = paste0("in.(", name_list, ")"))
+  )
+  if (is.data.frame(df_bm) && nrow(df_bm) > 0) df_bm
+  else player_stats_all %>% dplyr::filter(is_benchmark_row(.data$Name))
 }, error = function(e) {
   warning("Could not load benchmark_data: ", conditionMessage(e))
   player_stats_all %>% dplyr::filter(is_benchmark_row(.data$Name))
@@ -1662,133 +1578,76 @@ render_similar_current_players_ui <- function(player_name, top_n = 10, class_fil
 
 
 # --------------------------------------------------------------------------------
-# SQL query builder for the reactable table
-# Translates all active filter inputs into a parameterized Postgres query.
-# Returns a list(sql, params) safe for DBI::dbGetQuery(con, sql, params = params).
+# In-memory filter for the reactable table (replaces SQL build_table_query).
+# Applies all active filter inputs to the pre-loaded player_stats_all_with_composites df.
 # --------------------------------------------------------------------------------
-build_table_query <- function(
-    shiny_year        = NULL,   # character vector of selected years
-    shiny_team        = NULL,   # character vector of selected teams
-    shiny_role        = NULL,   # character vector of selected roles
-    shiny_prpg        = NULL,   # c(lo, hi) numeric or NULL
-    shiny_portal_only = FALSE,  # logical; filters to portal players via pid IN (...)
-    composites        = list(), # named list of c(lo, hi) per composite group name
-    table_state       = NULL,   # input$radar_table_state from JS (list with filters/search)
-    display_cols      = TABLE_DISPLAY_COLS,
-    count_only        = FALSE
+filter_player_stats <- function(
+    df,
+    shiny_year        = NULL,
+    shiny_team        = NULL,
+    shiny_role        = NULL,
+    shiny_prpg        = NULL,
+    shiny_portal_only = FALSE,
+    composites        = list(),
+    table_state       = NULL,
+    display_cols      = TABLE_DISPLAY_COLS
 ) {
-  conditions <- character(0)
-  params     <- list()
-  p          <- function() length(params)  # current param index helper
+  # Exclude benchmark rows
+  df <- df %>% dplyr::filter(!is_benchmark_row(.data$Name))
 
-  safe_col <- function(nm) {
-    # Return a quoted identifier string suitable for sprintf interpolation
-    paste0('"', gsub('"', '""', nm), '"')
+  if (!is.null(shiny_year) && length(shiny_year) > 0 && "Year" %in% names(df)) {
+    years_num <- suppressWarnings(as.numeric(shiny_year))
+    years_num <- years_num[is.finite(years_num)]
+    if (length(years_num) > 0)
+      df <- df %>% dplyr::filter(suppressWarnings(as.numeric(.data$Year)) %in% years_num)
   }
-
-  add_param <- function(val) {
-    params[[p() + 1L]] <<- val
-    p()
+  if (!is.null(shiny_team) && length(shiny_team) > 0 && "Team" %in% names(df)) {
+    df <- df %>% dplyr::filter(.data$Team %in% shiny_team)
   }
-
-  # Add each element of vals as a separate $N parameter; return "IN ($i, $j, ...)" body
-  add_params_in <- function(vals) {
-    indices <- integer(length(vals))
-    for (k in seq_along(vals)) indices[k] <- add_param(vals[[k]])
-    paste(sprintf("$%d", indices), collapse = ", ")
+  if (!is.null(shiny_role) && length(shiny_role) > 0 && "Role" %in% names(df)) {
+    df <- df %>% dplyr::filter(.data$Role %in% shiny_role)
   }
-
-  # ---- Exclude benchmark/average rows from the player table ----
-  safe_bench <- paste(sprintf("'%s'", gsub("'", "''", benchmark_names)), collapse = ", ")
-  conditions <- c(conditions, sprintf('"Name" NOT IN (%s)', safe_bench))
-
-  # ---- Shiny-side external filters ----
-  # Year is numeric in DB; pass as numeric and use IN with individual params
-  if (!is.null(shiny_year) && length(shiny_year) > 0) {
-    in_body <- add_params_in(as.numeric(shiny_year))
-    conditions <- c(conditions, sprintf('"Year" IN (%s)', in_body))
-  }
-  if (!is.null(shiny_team) && length(shiny_team) > 0) {
-    in_body <- add_params_in(as.character(shiny_team))
-    conditions <- c(conditions, sprintf('"Team" IN (%s)', in_body))
-  }
-  if (!is.null(shiny_role) && length(shiny_role) > 0) {
-    in_body <- add_params_in(as.character(shiny_role))
-    conditions <- c(conditions, sprintf('"Role" IN (%s)', in_body))
-  }
-  if (!is.null(shiny_prpg) && length(shiny_prpg) == 2) {
+  if (!is.null(shiny_prpg) && length(shiny_prpg) == 2 && "PRPG" %in% names(df)) {
     lo <- suppressWarnings(as.numeric(shiny_prpg[[1]]))
     hi <- suppressWarnings(as.numeric(shiny_prpg[[2]]))
     if (is.finite(lo) && is.finite(hi) && !(lo <= -2 && hi >= 10)) {
-      i_lo <- add_param(lo); i_hi <- add_param(hi)
-      conditions <- c(conditions, sprintf('"PRPG" BETWEEN $%d AND $%d', i_lo, i_hi))
+      df <- df %>% dplyr::filter(is.na(.data$PRPG) | (.data$PRPG >= lo & .data$PRPG <= hi))
     }
   }
-
-  if (isTRUE(shiny_portal_only) && length(portal_pids_vec) > 0) {
-    in_body <- add_params_in(as.character(portal_pids_vec))
-    conditions <- c(conditions, sprintf('"pid" IN (%s)', in_body))
+  if (isTRUE(shiny_portal_only) && length(portal_pids_vec) > 0 && "pid" %in% names(df)) {
+    df <- df %>% dplyr::filter(.data$pid %in% portal_pids_vec)
   }
 
-  # ---- Composite slider filters (Shiny-side external sliders) ----
-  # Composite group names in R (e.g. "Scoring") map to DB columns with "_score" suffix
+  # Composite score range filters
   for (nm in names(composites)) {
     rng <- composites[[nm]]
     if (is.null(rng) || length(rng) != 2) next
     lo <- suppressWarnings(as.numeric(rng[[1]]))
     hi <- suppressWarnings(as.numeric(rng[[2]]))
-    if (!is.finite(lo) || !is.finite(hi)) next
-    # Skip if full range (default 0-100) — avoids unnecessary BETWEEN in SQL
-    if (lo <= 0 && hi >= 100) next
-    i_lo <- add_param(lo); i_hi <- add_param(hi)
+    if (!is.finite(lo) || !is.finite(hi) || (lo <= 0 && hi >= 100)) next
     db_col <- paste0(nm, "_score")
-    conditions <- c(conditions, sprintf('%s BETWEEN $%d AND $%d', safe_col(db_col), i_lo, i_hi))
+    if (!db_col %in% names(df)) next
+    df <- df %>% dplyr::filter(is.na(.data[[db_col]]) | (.data[[db_col]] >= lo & .data[[db_col]] <= hi))
   }
 
-  # ---- In-table reactable filter state (captured from JS via Reactable.onStateChange) ----
+  # In-table reactable filter state
   if (!is.list(table_state)) table_state <- list()
-
-  # Per-column filters set inside the reactable
-  # (Global name search is handled client-side by reactable — not routed through SQL)
   for (f in (table_state$filters %||% list())) {
     col_id <- f$id
     val    <- f$value
-    if (is.null(col_id) || is.null(val)) next
-    # Only allow filtering on columns we know exist in the table (security + correctness)
-    if (!col_id %in% display_cols) next
-
-    # Range filter — MUI range slider sends a 2-element numeric vector
+    if (is.null(col_id) || is.null(val) || !col_id %in% display_cols || !col_id %in% names(df)) next
     if (is.numeric(val) && length(val) == 2) {
       lo <- val[[1]]; hi <- val[[2]]
-      if (is.finite(lo) && is.finite(hi)) {
-        i_lo <- add_param(lo); i_hi <- add_param(hi)
-        conditions <- c(conditions, sprintf('%s BETWEEN $%d AND $%d', safe_col(col_id), i_lo, i_hi))
-      }
-    # Multi-select filter — character vector of selected values
+      if (is.finite(lo) && is.finite(hi))
+        df <- df %>% dplyr::filter(is.na(.data[[col_id]]) | (.data[[col_id]] >= lo & .data[[col_id]] <= hi))
     } else if (is.character(val) && length(val) >= 1) {
-      in_body <- add_params_in(as.character(val))
-      conditions <- c(conditions, sprintf('%s IN (%s)', safe_col(col_id), in_body))
+      df <- df %>% dplyr::filter(.data[[col_id]] %in% val)
     }
   }
 
-  where_sql <- if (length(conditions) > 0)
-    paste("WHERE", paste(conditions, collapse = " AND "))
-  else ""
-
-  if (count_only) {
-    return(list(
-      sql    = sprintf('SELECT COUNT(*) AS n FROM "basketball_players" %s', where_sql),
-      params = params
-    ))
-  }
-
-  # Only select columns that are in both display_cols and the target list
-  fetch_cols <- display_cols  # caller may pass TABLE_DISPLAY_COLS or a subset
-  col_sql    <- paste(vapply(fetch_cols, safe_col, ""), collapse = ", ")
-  list(
-    sql    = sprintf('SELECT %s FROM "basketball_players" %s', col_sql, where_sql),
-    params = params
-  )
+  # Return only display columns that exist in the data
+  keep_cols <- intersect(display_cols, names(df))
+  if (length(keep_cols) > 0) df[, keep_cols, drop = FALSE] else df
 }
 
 # --------------------------------------------------------------------------------
@@ -2229,7 +2088,14 @@ shinyServer(function(input, output, session) {
         }
       )
 
-      q <- build_table_query(
+      src_df <- if (exists("player_stats_all_with_composites", inherits = TRUE)) {
+        player_stats_all_with_composites
+      } else {
+        player_stats_all
+      }
+
+      result <- filter_player_stats(
+        df              = src_df,
         shiny_year        = year_filter_d(),
         shiny_team        = input$team_filter,
         shiny_role        = input$role_filter,
@@ -2238,21 +2104,6 @@ shinyServer(function(input, output, session) {
         composites        = composite_filters,
         table_state       = radar_table_state_d(),
         display_cols      = TABLE_DISPLAY_COLS
-      )
-
-      result <- tryCatch(
-        DBI::dbGetQuery(supabase_pool, q$sql, params = q$params),
-        error = function(e) {
-          warning("[radar_table_filtered] SQL query failed: ", conditionMessage(e),
-                  "\nQuery: ", q$sql)
-          # Fallback: filter the in-memory data if pool query fails
-          df_fb <- if (exists("player_stats_all_with_composites", inherits = TRUE)) {
-            player_stats_all_with_composites
-          } else {
-            player_stats_all
-          }
-          df_fb %>% dplyr::filter(!is_benchmark_row(.data$Name))
-        }
       )
 
       # Add Portal column from pre-fetched portal pids
@@ -2791,28 +2642,18 @@ shinyServer(function(input, output, session) {
     player_names <- unique(c(as.character(input$players), benchmark_names))
 
     tryCatch({
-      if (is.null(supabase_pool)) stop("pool unavailable")
-
-      # Discover which *_pct columns exist in the DB (cached via memoisation if desired)
-      all_db_cols <- DBI::dbGetQuery(
-        supabase_pool,
-        "SELECT column_name FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = 'basketball_players'"
-      )$column_name
-
-      pct_cols     <- intersect(paste0(radar_vars_all, "_pct"), all_db_cols)
+      all_db_cols   <- DB_BASKETBALL_COLS %||% character(0)
+      pct_cols      <- intersect(paste0(radar_vars_all, "_pct"), all_db_cols)
       raw_stat_cols <- intersect(radar_vars_all, all_db_cols)
-      id_cols      <- intersect(c("Name", "Year", "Pick"), all_db_cols)
-      fetch_cols   <- unique(c(id_cols, pct_cols, raw_stat_cols))
+      id_cols       <- intersect(c("Name", "Year", "Pick"), all_db_cols)
+      fetch_cols    <- unique(c(id_cols, pct_cols, raw_stat_cols))
 
-      col_sql  <- paste(sprintf('"%s"', fetch_cols), collapse = ", ")
-      safe_names <- paste(sprintf("'%s'", gsub("'", "''", player_names)), collapse = ", ")
-      sql      <- sprintf(
-        'SELECT %s FROM "basketball_players" WHERE "Name" IN (%s)',
-        col_sql, safe_names
+      name_list <- paste(sprintf('"%s"', player_names), collapse = ",")
+      df <- supabase_get(
+        "basketball_players",
+        select  = paste(fetch_cols, collapse = ","),
+        filters = list(Name = paste0("in.(", name_list, ")"))
       )
-
-      df <- DBI::dbGetQuery(supabase_pool, sql)
 
       # Rename *_pct columns to bare stat names so the df can serve as
       # percentile_stats (expected column format by prepare_radar_long).
