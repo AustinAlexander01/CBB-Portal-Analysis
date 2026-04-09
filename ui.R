@@ -872,6 +872,11 @@ shinyUI(
     t = setTimeout(compute, 400);
   });
 })();
+")),
+        tags$script(HTML("
+$(document).on('shiny:disconnected', function() {
+  setTimeout(function() { location.reload(); }, 2000);
+});
 "))
       )
     ),
