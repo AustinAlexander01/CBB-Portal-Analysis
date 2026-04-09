@@ -28,6 +28,6 @@ ENV SUPABASE_USER=$SUPABASE_USER
 RUN echo "SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}" >> /home/shiny/.Renviron && \
     echo "SUPABASE_HOST=${SUPABASE_HOST}" >> /home/shiny/.Renviron && \
     echo "SUPABASE_USER=${SUPABASE_USER}" >> /home/shiny/.Renviron
-RUN echo "bust-cache-v8"
+RUN echo "bust-cache-v9"
 EXPOSE 3838
 CMD ["/usr/bin/shiny-server"]
