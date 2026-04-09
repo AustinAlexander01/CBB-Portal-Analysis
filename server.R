@@ -945,7 +945,7 @@ portal_pids_vec <- tryCatch({
   if (!is.null(supabase_pool)) {
     res <- DBI::dbGetQuery(
       supabase_pool,
-      'SELECT DISTINCT pid FROM mbb_portal_player_xref WHERE pid IS NOT NULL'
+      'SELECT DISTINCT pid FROM mbb_portal_player_xref WHERE pid IS NOT NULL AND is_confirmed = TRUE'
     )
     as.character(res$pid)
   } else character(0)
