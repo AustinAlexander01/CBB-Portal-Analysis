@@ -2966,7 +2966,7 @@ shinyServer(function(input, output, session) {
       }
 
       # ADDED: Mobile-aware caption formatting
-      caption_cfg <- format_radar_caption("Data: barttorvik.com | Created on https://lunchbox.shinyapps.io/mbb_radar_app/")
+      caption_cfg <- format_radar_caption("Data: barttorvik.com | Created on https://cbb.arkansasquant.com/")
       plot_w      <- session$clientData$output_radarPlot_width
       is_narrow   <- !is.null(plot_w) && is.finite(plot_w) && plot_w < 520
 
