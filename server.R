@@ -3117,8 +3117,8 @@ shinyServer(function(input, output, session) {
         if (!is.na(pts)) tags$p(strong("PTS:"), pts),
         if (!is.na(reb)) tags$p(strong("REB:"), reb),
         if (!is.na(ast)) tags$p(strong("AST:"), ast),
-        if (!is.na(stl)) tags$p(strong("STL:"), stl),
-        if (!is.na(blk)) tags$p(strong("BLK:"), blk),
+        if (!is.na(stl)) tags$p(strong("STL%:"), stl),
+        if (!is.na(blk)) tags$p(strong("BLK%:"), blk),
         tags$h5("Strengths"),
         if (length(strengths) > 0) {
           do.call(tagList, lapply(strengths, function(stat) {

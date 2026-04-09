@@ -1,2 +1,4 @@
 .DS_Store
 .Renviron
+.player_stats_cache_meta.rds
+.player_stats_cache.rds
