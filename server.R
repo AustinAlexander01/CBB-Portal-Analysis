@@ -3089,6 +3089,7 @@ shinyServer(function(input, output, session) {
       ast   <- if ("Ast" %in% names(stat_src)) round(stat_src$Ast[1], 1) else NA
       stl   <- if ("Stl" %in% names(stat_src)) round(stat_src$Stl[1], 1) else NA
       blk   <- if ("Blk" %in% names(stat_src)) round(stat_src$Blk[1], 1) else NA
+      ptir  <- if ("PredTransferImpactRating" %in% names(stat_src)) round(stat_src$PredTransferImpactRating[1], 1) else NA
 
       row_data <- row %>% dplyr::select(-Name)
       # pct_df includes both the player and benchmark rows, so get_profile_labels
@@ -3104,7 +3105,8 @@ shinyServer(function(input, output, session) {
       # Build "Role | Class" subtitle line
       role_class_parts <- na.omit(c(
         if (!is.na(role) && nzchar(role)) role else NA_character_,
-        if (!is.na(class) && nzchar(class)) class else NA_character_
+        if (!is.na(class) && nzchar(class)) class else NA_character_,
+        if (!is.na(ptir)) paste0("PTIR: ", ptir) else NA_character_
       ))
       role_class_line <- if (length(role_class_parts) > 0) {
         tags$p(em(paste(role_class_parts, collapse = " | ")))
