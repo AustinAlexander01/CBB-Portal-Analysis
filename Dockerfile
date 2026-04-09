@@ -28,6 +28,6 @@ ENV SUPABASE_HOST=$SUPABASE_HOST
 ENV SUPABASE_USER=$SUPABASE_USER
 RUN rm -f .player_stats_cache.rds .player_stats_cache_meta.rds
 RUN R -e "tryCatch({ source('server.R'); saveRDS(compute_app_data(), '.player_stats_cache.rds') }, error = function(e) { message('Cache pre-bake failed: ', e$message); quit(status=0) })"
-RUN echo "bust-cache-v4"
+RUN echo "bust-cache-v5"
 EXPOSE 3838
 CMD ["/usr/bin/shiny-server"]
