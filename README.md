@@ -2,7 +2,7 @@
 
 An interactive R Shiny app for scouting NCAA Division I Men's Basketball players, with a focus on the transfer portal.
 
-**[Live App](https://lunchbox.shinyapps.io/mbb_radar_app/)**
+**[Live App](https://cbb.arkansasquant.com/)**
 
 ---
 
