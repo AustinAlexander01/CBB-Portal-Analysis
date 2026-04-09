@@ -19,6 +19,15 @@ COPY ui.R ui.R
 COPY server.R server.R
 COPY plotly_helpers.R plotly_helpers.R
 COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
-RUN echo "bust-cache-v5"
+ARG SUPABASE_DB_PASSWORD
+ARG SUPABASE_HOST
+ARG SUPABASE_USER
+ENV SUPABASE_DB_PASSWORD=$SUPABASE_DB_PASSWORD
+ENV SUPABASE_HOST=$SUPABASE_HOST
+ENV SUPABASE_USER=$SUPABASE_USER
+RUN echo "SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}" >> /home/shiny/.Renviron && \
+    echo "SUPABASE_HOST=${SUPABASE_HOST}" >> /home/shiny/.Renviron && \
+    echo "SUPABASE_USER=${SUPABASE_USER}" >> /home/shiny/.Renviron
+RUN echo "bust-cache-v6"
 EXPOSE 3838
 CMD ["/usr/bin/shiny-server"]
