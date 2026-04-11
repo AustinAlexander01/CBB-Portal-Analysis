@@ -941,18 +941,10 @@ composite_percentiles_df <- app_data$composite_percentiles_df
 player_stats_all_with_composites <- app_data$player_stats_all_with_composites
 rm(app_data)
 
-portal_pids_vec <- tryCatch({
-  if (!is.null(supabase_pool)) {
-    res <- DBI::dbGetQuery(
-      supabase_pool,
-      'SELECT DISTINCT pid FROM mbb_portal_player_xref WHERE pid IS NOT NULL AND is_confirmed = TRUE'
-    )
-    as.character(res$pid)
-  } else character(0)
-}, error = function(e) {
-  warning("Could not load portal PIDs: ", conditionMessage(e))
-  character(0)
-})
+# portal_pids_vec is intentionally NOT set at global scope.
+# It is fetched fresh per session inside shinyServer() as a reactive,
+# so the app picks up newly confirmed matches without a process restart.
+# See portal_pids_rv reactive defined inside shinyServer below.
 
 # ---------------------------------------------------------------------------
 # Benchmark rows — loaded once at startup with all columns (incl *_pct).
@@ -1687,13 +1679,14 @@ render_similar_current_players_ui <- function(player_name, top_n = 10, class_fil
 # Returns a list(sql, params) safe for DBI::dbGetQuery(con, sql, params = params).
 # --------------------------------------------------------------------------------
 build_table_query <- function(
-    shiny_year        = NULL,   # character vector of selected years
-    shiny_team        = NULL,   # character vector of selected teams
-    shiny_role        = NULL,   # character vector of selected roles
-    shiny_prpg        = NULL,   # c(lo, hi) numeric or NULL
-    shiny_portal_only = FALSE,  # logical; filters to portal players via pid IN (...)
-    composites        = list(), # named list of c(lo, hi) per composite group name
-    table_state       = NULL,   # input$radar_table_state from JS (list with filters/search)
+    shiny_year        = NULL,        # character vector of selected years
+    shiny_team        = NULL,        # character vector of selected teams
+    shiny_role        = NULL,        # character vector of selected roles
+    shiny_prpg        = NULL,        # c(lo, hi) numeric or NULL
+    shiny_portal_only = FALSE,       # logical; filters to portal players via pid IN (...)
+    portal_pids       = character(0), # character vector of confirmed portal PIDs
+    composites        = list(),      # named list of c(lo, hi) per composite group name
+    table_state       = NULL,        # input$radar_table_state from JS (list with filters/search)
     display_cols      = TABLE_DISPLAY_COLS,
     count_only        = FALSE
 ) {
@@ -1745,8 +1738,8 @@ build_table_query <- function(
     }
   }
 
-  if (isTRUE(shiny_portal_only) && length(portal_pids_vec) > 0) {
-    in_body <- add_params_in(as.character(portal_pids_vec))
+  if (isTRUE(shiny_portal_only) && length(portal_pids) > 0) {
+    in_body <- add_params_in(as.character(portal_pids))
     conditions <- c(conditions, sprintf('"pid" IN (%s)', in_body))
   }
 
@@ -1833,6 +1826,24 @@ shinyServer(function(input, output, session) {
   log_init <- function(...) {
     if (isTRUE(debug_init)) message("[init] ", paste(..., collapse = " "))
   }
+
+  # Per-session reactive: fetch confirmed portal PIDs fresh from DB each time it is
+  # invalidated (i.e. on each new session load), so newly confirmed matches are visible
+  # without a process restart.
+  portal_pids_rv <- reactive({
+    tryCatch({
+      if (!is.null(supabase_pool)) {
+        res <- DBI::dbGetQuery(
+          supabase_pool,
+          'SELECT DISTINCT pid FROM mbb_portal_player_xref WHERE pid IS NOT NULL AND is_confirmed = TRUE'
+        )
+        as.character(res$pid)
+      } else character(0)
+    }, error = function(e) {
+      warning("Could not load portal PIDs: ", conditionMessage(e))
+      character(0)
+    })
+  })
 
   default_radar_year_selection <- local({
     cache <- NULL
@@ -2147,7 +2158,7 @@ shinyServer(function(input, output, session) {
     if (length(input$team_filter) > 0) df <- df %>% dplyr::filter(.data$Team %in% input$team_filter)
     if (length(input$role_filter) > 0) df <- df %>% dplyr::filter(.data$Role %in% input$role_filter)
     if ("pid" %in% names(df)) {
-      df$Portal <- ifelse(df$pid %in% portal_pids_vec, "Yes", "No")
+      df$Portal <- ifelse(df$pid %in% portal_pids_rv(), "Yes", "No")
     } else {
       df$Portal <- "No"
     }
@@ -2255,6 +2266,7 @@ shinyServer(function(input, output, session) {
         shiny_role        = input$role_filter,
         shiny_prpg        = input$prpg_filter,
         shiny_portal_only = isTRUE(input$portal_only),
+        portal_pids       = portal_pids_rv(),
         composites        = composite_filters,
         table_state       = radar_table_state_d(),
         display_cols      = TABLE_DISPLAY_COLS
@@ -2277,7 +2289,7 @@ shinyServer(function(input, output, session) {
 
       # Add Portal column from pre-fetched portal pids
       if ("pid" %in% names(result)) {
-        result$Portal <- ifelse(result$pid %in% portal_pids_vec, "Yes", "No")
+        result$Portal <- ifelse(result$pid %in% portal_pids_rv(), "Yes", "No")
       } else {
         result$Portal <- "No"
       }
