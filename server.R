@@ -2466,17 +2466,17 @@ shinyServer(function(input, output, session) {
         unique(c(lead_extras, base, tail_extras))
       }
 
-      # metadata columns (only if present)
-      meta_cols <- intersect(c("Year", "Conf", "Player", "Team", "Role", "Portal"), names(df))
-      # Insert ToTeam right after Portal (or at end if Portal absent)
+      # metadata columns (only if present) — display order: Portal, Year, Conf, Class, Role, Team, To Team
+      meta_cols <- intersect(c("Portal", "Year", "Conf", "Player", "Role", "Team"), names(df))
+      # Insert ToTeam right after Team (or at end if Team absent)
       if ("ToTeam" %in% names(df)) {
-        portal_pos <- which(meta_cols == "Portal")
-        if (length(portal_pos) > 0) {
-          tail_cols <- if (portal_pos < length(meta_cols))
-            meta_cols[seq.int(portal_pos + 1L, length(meta_cols))]
+        team_pos <- which(meta_cols == "Team")
+        if (length(team_pos) > 0) {
+          tail_cols <- if (team_pos < length(meta_cols))
+            meta_cols[seq.int(team_pos + 1L, length(meta_cols))]
           else
             character(0)
-          meta_cols <- c(meta_cols[seq_len(portal_pos)], "ToTeam", tail_cols)
+          meta_cols <- c(meta_cols[seq_len(team_pos)], "ToTeam", tail_cols)
         } else {
           meta_cols <- c(meta_cols, "ToTeam")
         }
@@ -2669,7 +2669,7 @@ shinyServer(function(input, output, session) {
       if ("ToTeam" %in% names(table_df)) {
         col_defs[["ToTeam"]] <- reactable::colDef(
           name = "To Team",
-          minWidth = 85, maxWidth = 190,
+          minWidth = 70, maxWidth = 160,
           filterable = TRUE,
           filterMethod = reactable::JS("filterMulti"),
           filterInput = reactable::JS("multiSelectFilter"),
@@ -2710,7 +2710,15 @@ shinyServer(function(input, output, session) {
         filterInput = reactable::JS("multiSelectFilter"),
         style = list(fontSize = "11px", whiteSpace = "nowrap", overflow = "hidden", textOverflow = "ellipsis")
       )
-      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role", "ToTeam"))) {
+      col_defs[["Portal"]] <- reactable::colDef(
+        name = "Portal",
+        minWidth = 72,
+        filterable = TRUE,
+        filterMethod = reactable::JS("filterMulti"),
+        filterInput = reactable::JS("multiSelectFilter"),
+        style = list(whiteSpace = "nowrap")
+      )
+      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role", "ToTeam", "Portal"))) {
         col_defs[[mc]] <- reactable::colDef(
           name = if (identical(mc, "Player")) "Class" else mc,
           minWidth = if (mc %in% c("Year", "Player")) 55 else 55,

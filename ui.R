@@ -647,7 +647,7 @@ shinyUI(
       /* Override both the outer widget div and the inner React container */
       #radarPlayerTable,
       #radarPlayerTable .Reactable {
-        height: 460px !important;
+        height: 625px !important;
       }
       /* Touch targets: bump small buttons/inputs to 36px min */
       .btn-sm {
