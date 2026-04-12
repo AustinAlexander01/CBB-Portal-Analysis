@@ -2403,10 +2403,16 @@ shinyServer(function(input, output, session) {
         df$ToTeam[is.na(df$ToTeam)] <- ""
         df$ToTeamLogo <- to_team_logo_map[df$ToTeam]
         df$ToTeamLogo[is.na(df$ToTeamLogo)] <- ""
+        # Mark confirmed portal players with no destination so the filter dropdown
+        # can select for them; the JS cell renderer suppresses the display text.
+        if ("Portal" %in% names(df))
+          df$ToTeam[df$ToTeam == "" & as.character(df$Portal) == "Yes"] <- "(Uncommitted)"
       } else {
         df$ToTeam     <- ""
         df$ToTeamLogo <- ""
       }
+      if (isTRUE(input$uncommitted_only) && "ToTeam" %in% names(df))
+        df <- df[df$ToTeam == "(Uncommitted)", , drop = FALSE]
 
       # --- normalize Class for the table + restrict to a clean set --------------
       allowed_class <- c("Fr", "So", "Jr", "Sr", "1st Rder Avg", "2nd Rder Avg", "D1 Avg")
@@ -2663,7 +2669,7 @@ shinyServer(function(input, output, session) {
       if ("ToTeam" %in% names(table_df)) {
         col_defs[["ToTeam"]] <- reactable::colDef(
           name = "To Team",
-          minWidth = 50, maxWidth = 160,
+          minWidth = 85, maxWidth = 190,
           filterable = TRUE,
           filterMethod = reactable::JS("filterMulti"),
           filterInput = reactable::JS("multiSelectFilter"),
@@ -2676,7 +2682,7 @@ shinyServer(function(input, output, session) {
           cell = reactable::JS("function(cellInfo) {
             var logo = cellInfo.row['ToTeamLogo'] || '';
             var name = String(cellInfo.value || '');
-            if (!name) return '';
+            if (!name || name === '(Uncommitted)') return '';
             if (logo) {
               return '<div style=\"display:flex;justify-content:center;align-items:center;height:100%\">' +
                 '<img src=\"' + logo + '\" title=\"' + name + '\"' +

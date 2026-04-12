@@ -958,8 +958,9 @@ $(document).on('shiny:disconnected', function() {
               )
             ),
             div(
-              style = "margin-left: 16px; margin-right: 16px; margin-bottom: 6px;",
-              checkboxInput("portal_only", "Portal Players Only", value = FALSE)
+              style = "margin-left: 16px; margin-right: 16px; margin-bottom: 6px; display: flex; gap: 24px; align-items: center;",
+              checkboxInput("portal_only", "Portal Players Only", value = FALSE),
+              checkboxInput("uncommitted_only", "Uncommitted Only", value = FALSE)
             ),
             div(
               id = "radarTableContainer",
