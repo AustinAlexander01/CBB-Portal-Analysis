@@ -645,6 +645,52 @@ if (!is.null(DB_BASKETBALL_COLS)) {
   TABLE_DISPLAY_COLS <- intersect(TABLE_DISPLAY_COLS, DB_BASKETBALL_COLS)
 }
 
+# ---------------------------------------------------------------------------
+# Team logo lookup maps — loaded once at startup from mbb_institution_crosswalk.
+# barttorvik_logo_map: barttorvik_team_name  -> logo_url  (for "Team" column)
+# portal_logo_map:     portal_team_name      -> logo_url  (for "To Team" column)
+# ---------------------------------------------------------------------------
+.logo_df <- tryCatch({
+  if (!is.null(supabase_pool)) {
+    DBI::dbGetQuery(
+      supabase_pool,
+      "SELECT barttorvik_team_name, portal_team_name, logo_url
+       FROM mbb_institution_crosswalk
+       WHERE logo_url IS NOT NULL AND logo_url <> ''"
+    )
+  } else {
+    data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character())
+  }
+}, error = function(e) {
+  warning("Could not load team logos: ", conditionMessage(e))
+  data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character())
+})
+barttorvik_logo_map <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$barttorvik_team_name) else character(0)
+portal_logo_map     <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$portal_team_name)     else character(0)
+rm(.logo_df)
+
+# to_team_logo_map: to_team (raw portal string) -> logo_url
+# Built by JOINing directly on mbb_transfer_portal.to_team so that lookup
+# keys exactly match the strings portal_to_team_rv() returns at runtime,
+# bypassing any crosswalk portal_team_name string-matching ambiguity.
+to_team_logo_map <- tryCatch({
+  if (!is.null(supabase_pool)) {
+    .tt_df <- DBI::dbGetQuery(
+      supabase_pool,
+      "SELECT DISTINCT p.to_team, c.logo_url
+       FROM mbb_transfer_portal p
+       JOIN mbb_institution_crosswalk c
+         ON LOWER(TRIM(p.to_team)) = LOWER(TRIM(c.portal_team_name))
+       WHERE c.logo_url IS NOT NULL AND c.logo_url <> ''
+         AND p.to_team IS NOT NULL AND p.to_team <> ''"
+    )
+    if (nrow(.tt_df) > 0) setNames(.tt_df$logo_url, .tt_df$to_team) else character(0)
+  } else character(0)
+}, error = function(e) {
+  warning("Could not load to_team logo map: ", conditionMessage(e))
+  character(0)
+})
+
 load_player_stats_source <- function() {
   cache_path <- ".player_stats_cache.rds"
   cache_meta_path <- ".player_stats_cache_meta.rds"
@@ -1845,6 +1891,26 @@ shinyServer(function(input, output, session) {
     })
   })
 
+  # Per-session reactive: pid -> to_team mapping for confirmed portal players.
+  # Used to populate the "To Team" column in the reactable.
+  portal_to_team_rv <- reactive({
+    tryCatch({
+      if (!is.null(supabase_pool)) {
+        res <- DBI::dbGetQuery(
+          supabase_pool,
+          "SELECT x.pid::text AS pid, p.to_team
+           FROM mbb_portal_player_xref x
+           JOIN mbb_transfer_portal p ON p.id = x.portal_id
+           WHERE x.is_confirmed = TRUE AND p.to_team IS NOT NULL AND p.to_team <> ''"
+        )
+        setNames(res$to_team, res$pid)
+      } else character(0)
+    }, error = function(e) {
+      warning("Could not load portal to_team map: ", conditionMessage(e))
+      character(0)
+    })
+  })
+
   default_radar_year_selection <- local({
     cache <- NULL
     function() {
@@ -2321,6 +2387,27 @@ shinyServer(function(input, output, session) {
       if (profiling_enabled()) message("[radarPlayerTable] got data rows=", nrow(df), " cols=", ncol(df))
       if (!is.data.frame(df)) df <- data.frame()
 
+      # --- Attach team logo URLs and To Team column ----------------------------
+      # TeamLogo: barttorvik team name -> ESPN logo URL
+      if ("Team" %in% names(df) && length(barttorvik_logo_map) > 0) {
+        df$TeamLogo <- barttorvik_logo_map[as.character(df$Team)]
+        df$TeamLogo[is.na(df$TeamLogo)] <- ""
+      } else {
+        df$TeamLogo <- ""
+      }
+      # ToTeam: pid -> to_team text (from reactive), then logo via to_team_logo_map
+      if ("pid" %in% names(df)) {
+        to_team_map   <- portal_to_team_rv()
+        pids_chr      <- as.character(df$pid)
+        df$ToTeam     <- if (length(to_team_map) > 0) to_team_map[pids_chr] else NA_character_
+        df$ToTeam[is.na(df$ToTeam)] <- ""
+        df$ToTeamLogo <- to_team_logo_map[df$ToTeam]
+        df$ToTeamLogo[is.na(df$ToTeamLogo)] <- ""
+      } else {
+        df$ToTeam     <- ""
+        df$ToTeamLogo <- ""
+      }
+
       # --- normalize Class for the table + restrict to a clean set --------------
       allowed_class <- c("Fr", "So", "Jr", "Sr", "1st Rder Avg", "2nd Rder Avg", "D1 Avg")
 
@@ -2375,6 +2462,19 @@ shinyServer(function(input, output, session) {
 
       # metadata columns (only if present)
       meta_cols <- intersect(c("Year", "Team", "Conf", "Role", "Player", "Portal"), names(df))
+      # Insert ToTeam right after Portal (or at end if Portal absent)
+      if ("ToTeam" %in% names(df)) {
+        portal_pos <- which(meta_cols == "Portal")
+        if (length(portal_pos) > 0) {
+          tail_cols <- if (portal_pos < length(meta_cols))
+            meta_cols[seq.int(portal_pos + 1L, length(meta_cols))]
+          else
+            character(0)
+          meta_cols <- c(meta_cols[seq_len(portal_pos)], "ToTeam", tail_cols)
+        } else {
+          meta_cols <- c(meta_cols, "ToTeam")
+        }
+      }
       raw_stat_order <- c("Ht", "G", "Min_pct", names(stat_labels))
       raw_stat_cols <- intersect(raw_stat_order, names(df))
       raw_stat_cols <- setdiff(raw_stat_cols, c(
@@ -2390,7 +2490,9 @@ shinyServer(function(input, output, session) {
         )),
         names(df)
       )
-      table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols))
+      # Include hidden logo helper columns so JS cell renderers can access them
+      logo_helper_cols <- intersect(c("TeamLogo", "ToTeamLogo"), names(df))
+      table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols, logo_helper_cols))
 
       table_df <- df %>%
         dplyr::select(dplyr::any_of(table_cols)) %>%
@@ -2519,27 +2621,73 @@ shinyServer(function(input, output, session) {
         # MODIFIED: Name column also pinned (sticky = "left") - ordering: index first, then Name
         Name = reactable::colDef(
           name = "Player",
-          minWidth = 80,
-          maxWidth = 150,
+          minWidth = 110,
+          maxWidth = 175,
           sticky = "left",
           filterable = TRUE,
-          style = list(whiteSpace = "normal"),
+          html = TRUE,
           cell = reactable::JS("function(cellInfo) {
             var name = String(cellInfo.value || '');
             var idx = name.indexOf(' (');
-            return idx > 0 ? name.substring(0, idx) : name;
+            name = idx > 0 ? name.substring(0, idx) : name;
+            var fs = name.length > 22 ? '9px' : name.length > 17 ? '10px' : '11px';
+            return '<span style=\"font-size:' + fs + ';white-space:nowrap;overflow:hidden;' +
+              'text-overflow:ellipsis;display:block;width:100%\">' + name + '</span>';
           }")
         )
       )
 
       col_defs[["Team"]] <- reactable::colDef(
         name = "Team",
-        minWidth = 80, maxWidth = 120,
+        minWidth = 110, maxWidth = 150,
         filterable = TRUE,
         filterMethod = reactable::JS("filterMulti"),
         filterInput = reactable::JS("multiSelectFilter"),
-        style = list(fontSize = "11px", whiteSpace = "nowrap", overflow = "hidden", textOverflow = "ellipsis")
+        html = TRUE,
+        cell = reactable::JS("function(cellInfo) {
+          var logo = cellInfo.row['TeamLogo'] || '';
+          var name = String(cellInfo.value || '');
+          var nameSpan = '<span style=\"font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">' + name + '</span>';
+          if (logo) {
+            return '<div style=\"display:flex;align-items:center;gap:5px\">' +
+              '<img src=\"' + logo + '\" style=\"width:20px;height:20px;object-fit:contain;flex-shrink:0\" />' +
+              nameSpan + '</div>';
+          }
+          return nameSpan;
+        }")
       )
+      # Hidden helper columns — values accessible in JS cell renderers via cellInfo.row
+      col_defs[["TeamLogo"]]   <- reactable::colDef(show = FALSE)
+      col_defs[["ToTeamLogo"]] <- reactable::colDef(show = FALSE)
+      # To Team column — shows destination logo + portal team name
+      if ("ToTeam" %in% names(table_df)) {
+        col_defs[["ToTeam"]] <- reactable::colDef(
+          name = "To Team",
+          minWidth = 50, maxWidth = 160,
+          filterable = TRUE,
+          filterMethod = reactable::JS("filterMulti"),
+          filterInput = reactable::JS("multiSelectFilter"),
+          html = TRUE,
+          headerStyle = list(whiteSpace = "nowrap"),
+          style = reactable::JS("function(rowInfo) {
+            var logo = rowInfo.values['ToTeamLogo'] || '';
+            return logo ? { background: '#ffffff' } : null;
+          }"),
+          cell = reactable::JS("function(cellInfo) {
+            var logo = cellInfo.row['ToTeamLogo'] || '';
+            var name = String(cellInfo.value || '');
+            if (!name) return '';
+            if (logo) {
+              return '<div style=\"display:flex;justify-content:center;align-items:center;height:100%\">' +
+                '<img src=\"' + logo + '\" title=\"' + name + '\"' +
+                ' style=\"width:22px;height:22px;object-fit:contain\" /></div>';
+            }
+            var fs = name.length > 22 ? '9px' : name.length > 17 ? '10px' : '11px';
+            return '<span style=\"font-size:' + fs + ';white-space:nowrap;overflow:hidden;' +
+              'text-overflow:ellipsis;display:block;width:100%\">' + name + '</span>';
+          }")
+        )
+      }
       col_defs[["Conf"]] <- reactable::colDef(
         name = "Conf",
         minWidth = 55, maxWidth = 90,
@@ -2556,7 +2704,7 @@ shinyServer(function(input, output, session) {
         filterInput = reactable::JS("multiSelectFilter"),
         style = list(fontSize = "11px", whiteSpace = "nowrap", overflow = "hidden", textOverflow = "ellipsis")
       )
-      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role"))) {
+      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role", "ToTeam"))) {
         col_defs[[mc]] <- reactable::colDef(
           name = if (identical(mc, "Player")) "Class" else mc,
           minWidth = if (mc %in% c("Year", "Player")) 55 else 55,
