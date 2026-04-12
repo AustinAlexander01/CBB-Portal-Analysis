@@ -2467,7 +2467,7 @@ shinyServer(function(input, output, session) {
       }
 
       # metadata columns (only if present)
-      meta_cols <- intersect(c("Year", "Team", "Conf", "Role", "Player", "Portal"), names(df))
+      meta_cols <- intersect(c("Year", "Conf", "Player", "Team", "Role", "Portal"), names(df))
       # Insert ToTeam right after Portal (or at end if Portal absent)
       if ("ToTeam" %in% names(df)) {
         portal_pos <- which(meta_cols == "Portal")
