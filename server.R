@@ -1371,8 +1371,8 @@ plot_radar_plotly <- function(players,
         radialaxis = list(visible = TRUE, range = c(0, 100), tickvals = c(0, 25, 50, 75, 100)),
         angularaxis = list(tickfont = list(size = 11))
       ),
-      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.05),
-      margin = list(l = 60, r = 60, t = 5, b = 80)
+      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.08, yanchor = "bottom"),
+      margin = list(l = 60, r = 60, t = 60, b = 20)
     )
 }
 
@@ -3346,12 +3346,18 @@ shinyServer(function(input, output, session) {
       wellPanel(
         tags$h4(player_name),
         role_class_line,
-        if (!is.na(ht)) tags$p(strong("Height:"), ht),
-        if (!is.na(pts)) tags$p(strong("PTS:"), pts),
-        if (!is.na(reb)) tags$p(strong("REB:"), reb),
-        if (!is.na(ast)) tags$p(strong("AST:"), ast),
-        if (!is.na(stl)) tags$p(strong("STL%:"), stl),
-        if (!is.na(blk)) tags$p(strong("BLK%:"), blk),
+        fluidRow(
+          column(width = 6,
+            if (!is.na(ht))  tags$p(strong("Height:"), ht),
+            if (!is.na(pts)) tags$p(strong("PTS:"),    pts),
+            if (!is.na(reb)) tags$p(strong("REB:"),    reb)
+          ),
+          column(width = 6,
+            if (!is.na(ast)) tags$p(strong("AST:"),  ast),
+            if (!is.na(stl)) tags$p(strong("STL%:"), stl),
+            if (!is.na(blk)) tags$p(strong("BLK%:"), blk)
+          )
+        ),
         tags$h5("Strengths"),
         if (length(strengths) > 0) {
           do.call(tagList, lapply(strengths, function(stat) {

@@ -679,6 +679,10 @@ shinyUI(
     }
     /* Prevent iOS font inflation on orientation change */
     html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    /* Push right panel down to align with the reactable on desktop */
+    @media (min-width: 769px) {
+      .right-panel-offset { margin-top: 370px; }
+    }
   ")),
         tags$script(HTML(mui_filter_js)),
         tags$script(HTML("
@@ -1082,24 +1086,27 @@ $(document).on('shiny:disconnected', function() {
           column(
             width = 5,
             tags$div(
-              class = "radar-plot-outer",
+              class = "right-panel-offset",
               tags$div(
-                class = "radar-plot-wrap",
-                shinycssloaders::withSpinner(
-                  plotly::plotlyOutput("radarPlot", height = "100%"),
-                  type = 8,
-                  size = 1,
-                  caption = "Loading data"
+                class = "radar-plot-outer",
+                tags$div(
+                  class = "radar-plot-wrap",
+                  shinycssloaders::withSpinner(
+                    plotly::plotlyOutput("radarPlot", height = "100%"),
+                    type = 8,
+                    size = 1,
+                    caption = "Loading data"
+                  )
                 )
-              )
-            ),
-            tags$div(
-              style = "font-size: 0.88em;",
-              uiOutput("playerProfiles"),
-              uiOutput("careerSimilarity"),
-              fluidRow(
-                column(width = 6, uiOutput("playerStrengths")),
-                column(width = 6, uiOutput("playerWeaknesses"))
+              ),
+              tags$div(
+                style = "font-size: 0.88em;",
+                uiOutput("playerProfiles"),
+                uiOutput("careerSimilarity"),
+                fluidRow(
+                  column(width = 6, uiOutput("playerStrengths")),
+                  column(width = 6, uiOutput("playerWeaknesses"))
+                )
               )
             )
           )
