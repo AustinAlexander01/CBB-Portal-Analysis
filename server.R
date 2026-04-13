@@ -3220,9 +3220,9 @@ shinyServer(function(input, output, session) {
       margin_cfg <- if (is_narrow) {
         list(l = 15, r = 15, t = 5, b = 110)
       } else {
-        list(l = 60, r = 60, t = 95, b = 65)
+        list(l = 60, r = 60, t = 95, b = 95)
       }
-      caption_y_val <- if (is_narrow) -0.10 else -0.12
+      caption_y_val <- if (is_narrow) -0.10 else -0.07
 
       p <- p %>%
         plotly::layout(
@@ -3271,14 +3271,14 @@ shinyServer(function(input, output, session) {
         plot_bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
         font = list(color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222"),
         polar = list(
-          domain = list(x = c(0.05, 0.95), y = c(0, 0.87)),
+          domain = list(x = c(0.05, 0.95), y = c(0, 0.83)),
           bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
           angularaxis = list(
             gridcolor = if (isTRUE(input$dark_mode)) "#334155" else "#d1d5db",
             linecolor = if (isTRUE(input$dark_mode)) "#475569" else "#9ca3af",
             tickfont = list(
               color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222",
-              size  = if (is_narrow) 9L else if (identical(input$view_mode, "Individual Stats")) 10L else 13L
+              size  = if (is_narrow) 9L else if (identical(input$view_mode, "Individual Stats")) 10L else 12L
             )
           ),
           radialaxis = list(
