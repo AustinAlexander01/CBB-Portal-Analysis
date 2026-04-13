@@ -1368,11 +1368,25 @@ plot_radar_plotly <- function(players,
       title = if (is.list(title)) title else list(text = title %||% paste0("Radar (", view_mode, ")")),
       showlegend = TRUE,
       polar = list(
-        radialaxis = list(visible = TRUE, range = c(0, 100), tickvals = c(0, 25, 50, 75, 100)),
-        angularaxis = list(tickfont = list(size = 11))
+        domain = list(x = c(0.05, 0.95), y = c(0, 0.87)),
+        radialaxis = list(
+          visible  = TRUE,
+          range    = c(0, 100),
+          tickvals = c(0, 25, 50, 75, 100),
+          tickfont = list(size = 13)
+        ),
+        angularaxis = list(tickfont = list(size = 19))
       ),
-      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.08, yanchor = "bottom"),
-      margin = list(l = 60, r = 60, t = 60, b = 20)
+      legend = list(
+        orientation   = "v",
+        x             = 0.5,
+        xanchor       = "center",
+        y             = 1.0,
+        yanchor       = "bottom",
+        font          = list(size = 17),
+        tracegroupgap = 8
+      ),
+      margin = list(l = 40, r = 40, t = 115, b = 10)
     )
 }
 
@@ -3206,7 +3220,7 @@ shinyServer(function(input, output, session) {
       margin_cfg <- if (is_narrow) {
         list(l = 15, r = 15, t = 5, b = 110)
       } else {
-        list(l = 60, r = 60, t = 25, b = 90)
+        list(l = 60, r = 60, t = 95, b = 65)
       }
       caption_y_val <- if (is_narrow) -0.10 else -0.12
 
@@ -3224,8 +3238,8 @@ shinyServer(function(input, output, session) {
               showarrow = FALSE,
               textangle = -45,
               font = list(
-                size = if (is_narrow) 28L else 60L,
-                color = "rgba(0,0,0,0.05)"
+                size = if (is_narrow) 20L else 40L,
+                color = if (isTRUE(input$dark_mode)) "rgba(255,255,255,0.18)" else "rgba(0,0,0,0.12)"
               ),
               xanchor = "center",
               yanchor = "middle",
@@ -3257,13 +3271,14 @@ shinyServer(function(input, output, session) {
         plot_bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
         font = list(color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222"),
         polar = list(
+          domain = list(x = c(0.05, 0.95), y = c(0, 0.87)),
           bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
           angularaxis = list(
             gridcolor = if (isTRUE(input$dark_mode)) "#334155" else "#d1d5db",
             linecolor = if (isTRUE(input$dark_mode)) "#475569" else "#9ca3af",
             tickfont = list(
               color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222",
-              size  = if (is_narrow) 9L else 11L
+              size  = if (is_narrow) 9L else if (identical(input$view_mode, "Individual Stats")) 10L else 13L
             )
           ),
           radialaxis = list(

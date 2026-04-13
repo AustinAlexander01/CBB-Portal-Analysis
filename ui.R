@@ -683,6 +683,43 @@ shinyUI(
     @media (min-width: 769px) {
       .right-panel-offset { margin-top: 370px; }
     }
+    /* Save-photo modal */
+    #radarPhotoModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.88);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 16px;
+    }
+    #radarPhotoModal.open { display: flex; }
+    #radarPhotoModalImg {
+      max-width: 95vw;
+      max-height: 75vh;
+      border-radius: 8px;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.6);
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #radarPhotoModalHint {
+      color: #e2e8f0;
+      margin-top: 14px;
+      font-size: 14px;
+      text-align: center;
+    }
+    #radarPhotoModalClose {
+      margin-top: 12px;
+      padding: 8px 24px;
+      border-radius: 6px;
+      border: none;
+      background: #475569;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
   ")),
         tags$script(HTML(mui_filter_js)),
         tags$script(HTML("
@@ -791,7 +828,7 @@ shinyUI(
     if (!chk) return;
     var saved = null;
     try { saved = localStorage.getItem('radar_dark_mode'); } catch (e) {}
-    var isOn = (saved === '1');
+    var isOn = (saved !== '0');  // default ON; only off if user explicitly unchecked
     chk.checked = isOn;
     applyDarkMode(isOn);
     if (!_darkModeInited) {
@@ -810,7 +847,7 @@ shinyUI(
   window.addEventListener('load', function() {
     var saved = null;
     try { saved = localStorage.getItem('radar_dark_mode'); } catch(e) {}
-    if (saved === '1') {
+    if (saved !== '0') {  // default ON; only skip if user explicitly unchecked
       document.documentElement.classList.add('dark-mode');
       document.body.classList.add('dark-mode');
       var chk = document.getElementById('dark_mode_toggle');
@@ -974,6 +1011,11 @@ $(document).on('shiny:disconnected', function() {
               div(
                 style = "display:flex; align-items:center; gap:8px;",
                 actionButton(
+                  inputId = "radar_reset_players",
+                  label   = "Clear selection(s)",
+                  class   = "btn btn-default btn-sm"
+                ),
+                actionButton(
                   inputId = "radar_reset_filters",
                   label   = "Reset filters",
                   class   = "btn btn-default btn-sm"
@@ -1025,46 +1067,6 @@ $(document).on('shiny:disconnected', function() {
                 checkboxInput("include_edmr_axis", "Include EDMR Axis", value = TRUE)
               )
             ),
-            div(
-              style = "margin-top: 8px; margin-bottom: 4px;",
-              actionButton(
-                inputId = "radar_reset_players",
-                label   = "Clear selection(s)",
-                class   = "btn btn-default btn-sm"
-              )
-            ),
-            div(
-              style = "margin-top: 4px; margin-bottom: 4px;",
-              tags$button(
-                id = "radarExportBtn",
-                class = "btn btn-default btn-sm",
-                onclick = "
-                  var btn = this;
-                  var el = document.getElementById('radarPlot');
-                  if (el && window.Plotly) {
-                    var orig = btn.textContent;
-                    btn.disabled = true;
-                    btn.textContent = 'Exporting...';
-                    var w = Math.max(Math.round(el.offsetWidth) || 700, 680);
-                    var h = Math.max(Math.round(el.offsetHeight) || 500, 480);
-                    Plotly.downloadImage(el, {
-                      format: 'png',
-                      width: w,
-                      height: h,
-                      scale: 3,
-                      filename: 'radar_export'
-                    }).then(function() {
-                      btn.disabled = false;
-                      btn.textContent = orig;
-                    }).catch(function() {
-                      btn.disabled = false;
-                      btn.textContent = orig;
-                    });
-                  }
-                ",
-                "\u2193 Export PNG"
-              )
-            ),
             conditionalPanel(
               condition = "input.view_mode == 'Individual Stats'",
               selectizeInput(
@@ -1087,6 +1089,93 @@ $(document).on('shiny:disconnected', function() {
             width = 5,
             tags$div(
               class = "right-panel-offset",
+              div(
+                style = "margin-bottom: 6px; display: flex; gap: 6px; justify-content: flex-end;",
+                tags$button(
+                  id = "radarExportBtn",
+                  class = "btn btn-default btn-sm",
+                  onclick = "
+                    var btn = this;
+                    var el = document.getElementById('radarPlot');
+                    if (el && window.Plotly) {
+                      var orig = btn.textContent;
+                      btn.disabled = true;
+                      btn.textContent = 'Exporting...';
+                      var w = Math.max(Math.round(el.offsetWidth) || 700, 680);
+                      var h = Math.max(Math.round(el.offsetHeight) || 500, 480);
+                      Plotly.downloadImage(el, {
+                        format: 'png',
+                        width: w,
+                        height: h,
+                        scale: 3,
+                        filename: 'radar_export'
+                      }).then(function() {
+                        btn.disabled = false;
+                        btn.textContent = orig;
+                      }).catch(function() {
+                        btn.disabled = false;
+                        btn.textContent = orig;
+                      });
+                    }
+                  ",
+                  "\u2193 Export PNG"
+                ),
+                tags$button(
+                  id = "radarSavePhotoBtn",
+                  class = "btn btn-default btn-sm",
+                  onclick = "
+                    var btn = document.getElementById('radarSavePhotoBtn');
+                    var el  = document.getElementById('radarPlot');
+                    if (!el || !window.Plotly) return;
+                    var orig = btn.textContent;
+                    btn.disabled = true;
+                    btn.textContent = 'Generating...';
+
+                    // Capture the current live font sizes so we can restore them after export
+                    var fl = el._fullLayout || {};
+                    var liveAngSize = (fl.polar && fl.polar.angularaxis && fl.polar.angularaxis.tickfont)
+                      ? (fl.polar.angularaxis.tickfont.size || 12) : 12;
+                    var liveLegSize = (fl.legend && fl.legend.font)
+                      ? (fl.legend.font.size || 17) : 17;
+
+                    // Temporarily bump fonts for a readable export image
+                    Plotly.relayout(el, {
+                      'polar.angularaxis.tickfont.size': 20,
+                      'legend.font.size': 15
+                    })
+                    .then(function() {
+                      // 700x700 @ scale:1 stays near 1:1 in the modal on desktop,
+                      // ~2x shrink on mobile — size-28 text reads as ~14 on phone
+                      return Plotly.toImage(el, { format: 'png', width: 700, height: 700, scale: 1 });
+                    })
+                    .then(function(dataUrl) {
+                      // Restore live-chart fonts before revealing the modal
+                      return Plotly.relayout(el, {
+                        'polar.angularaxis.tickfont.size': liveAngSize,
+                        'legend.font.size': liveLegSize
+                      }).then(function() { return dataUrl; });
+                    })
+                    .then(function(dataUrl) {
+                      var modal = document.getElementById('radarPhotoModal');
+                      var img   = document.getElementById('radarPhotoModalImg');
+                      img.src = dataUrl;
+                      modal.classList.add('open');
+                      btn.disabled = false;
+                      btn.textContent = orig;
+                    })
+                    .catch(function() {
+                      // Restore even on error
+                      Plotly.relayout(el, {
+                        'polar.angularaxis.tickfont.size': liveAngSize,
+                        'legend.font.size': liveLegSize
+                      });
+                      btn.disabled = false;
+                      btn.textContent = orig;
+                    });
+                  ",
+                  "\ud83d\udcf1 Save photo"
+                )
+              ),
               tags$div(
                 class = "radar-plot-outer",
                 tags$div(
@@ -1122,7 +1211,19 @@ $(document).on('shiny:disconnected', function() {
           )
         ),
         br(),
-        data_updated_footer("data_updated_radar")
+        data_updated_footer("data_updated_radar"),
+        # Save-photo modal — shown over everything when user taps "Save photo"
+        tags$div(
+          id = "radarPhotoModal",
+          tags$img(id = "radarPhotoModalImg", src = ""),
+          tags$p(id = "radarPhotoModalHint", "Long-press the image and tap \u201cSave to Photos\u201d"),
+          tags$button(
+            id = "radarPhotoModalClose",
+            onclick = "document.getElementById('radarPhotoModal').classList.remove('open');
+                       document.getElementById('radarPhotoModalImg').src = '';",
+            "Close"
+          )
+        )
       )
     )
   )
