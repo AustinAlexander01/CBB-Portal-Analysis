@@ -2303,6 +2303,26 @@ shinyServer(function(input, output, session) {
     filtered_stats()
   })
 
+  # --- Watchlist ---
+  watchlist_rv <- reactiveVal(character(0))
+
+  observeEvent(input$watchlist_init, {
+    pids <- as.character(input$watchlist_init)
+    watchlist_rv(pids[!is.na(pids) & nzchar(pids)])
+  }, ignoreNULL = TRUE, once = TRUE)
+
+  observeEvent(input$watchlist_star_click, {
+    req(input$watchlist_star_click)
+    pid <- as.character(input$watchlist_star_click$pid)
+    if (!nzchar(pid)) return()
+    current <- watchlist_rv()
+    watchlist_rv(if (pid %in% current) setdiff(current, pid) else c(current, pid))
+  }, ignoreNULL = TRUE)
+
+  observe({
+    session$sendCustomMessage("watchlist_update", list(pids = watchlist_rv()))
+  })
+
   # Debounce the in-table filter state so a fast-typing search waits 600ms before
   # triggering a SQL round-trip. Without this, every keystroke fires a query and
   # the table blanks between results.
@@ -2387,19 +2407,29 @@ shinyServer(function(input, output, session) {
       if (profiling_enabled()) message("[radarPlayerTable] got data rows=", nrow(df), " cols=", ncol(df))
       if (!is.data.frame(df)) df <- data.frame()
 
+      # --- Watchlist filter -----------------------------------------------------
+      if (isTRUE(input$watchlist_only) && "pid" %in% names(df)) {
+        wl <- watchlist_rv()
+        if (length(wl) > 0) {
+          df <- df[as.character(df$pid) %in% wl, , drop = FALSE]
+        } else {
+          df <- df[0L, , drop = FALSE]
+        }
+      }
+
       # --- Attach team logo URLs and To Team column ----------------------------
       # TeamLogo: barttorvik team name -> ESPN logo URL
       if ("Team" %in% names(df) && length(barttorvik_logo_map) > 0) {
         df$TeamLogo <- barttorvik_logo_map[as.character(df$Team)]
         df$TeamLogo[is.na(df$TeamLogo)] <- ""
       } else {
-        df$TeamLogo <- ""
+        df$TeamLogo <- character(nrow(df))
       }
       # ToTeam: pid -> to_team text (from reactive), then logo via to_team_logo_map
       if ("pid" %in% names(df)) {
         to_team_map   <- portal_to_team_rv()
         pids_chr      <- as.character(df$pid)
-        df$ToTeam     <- if (length(to_team_map) > 0) to_team_map[pids_chr] else NA_character_
+        df$ToTeam     <- if (length(to_team_map) > 0) to_team_map[pids_chr] else character(nrow(df))
         df$ToTeam[is.na(df$ToTeam)] <- ""
         df$ToTeamLogo <- to_team_logo_map[df$ToTeam]
         df$ToTeamLogo[is.na(df$ToTeamLogo)] <- ""
@@ -2408,8 +2438,8 @@ shinyServer(function(input, output, session) {
         if ("Portal" %in% names(df))
           df$ToTeam[df$ToTeam == "" & as.character(df$Portal) == "Yes"] <- "(Uncommitted)"
       } else {
-        df$ToTeam     <- ""
-        df$ToTeamLogo <- ""
+        df$ToTeam     <- character(nrow(df))
+        df$ToTeamLogo <- character(nrow(df))
       }
       if (isTRUE(input$uncommitted_only) && "ToTeam" %in% names(df))
         df <- df[df$ToTeam == "(Uncommitted)", , drop = FALSE]
@@ -2498,7 +2528,8 @@ shinyServer(function(input, output, session) {
       )
       # Include hidden logo helper columns so JS cell renderers can access them
       logo_helper_cols <- intersect(c("TeamLogo", "ToTeamLogo"), names(df))
-      table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols, logo_helper_cols))
+      pid_col          <- intersect("pid", names(df))
+      table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols, logo_helper_cols, pid_col))
 
       table_df <- df %>%
         dplyr::select(dplyr::any_of(table_cols)) %>%
@@ -2506,8 +2537,9 @@ shinyServer(function(input, output, session) {
           Year = if ("Year" %in% names(.)) suppressWarnings(as.integer(.data$Year)) else NULL,
           Conf = if ("Conf" %in% names(.)) as.character(.data$Conf) else NULL
         )
-      table_df$.idx <- seq_len(nrow(table_df))
-      table_df <- table_df %>% dplyr::select(.idx, dplyr::everything())
+      table_df$.idx  <- seq_len(nrow(table_df))
+      table_df$Star  <- integer(nrow(table_df))
+      table_df <- table_df %>% dplyr::select(.idx, Star, dplyr::everything())
 
       if (profiling_enabled()) {
         message("[radarPlayerTable] df cols contain DraftSignalRank? ", "DraftSignalRank" %in% names(df))
@@ -2643,6 +2675,29 @@ shinyServer(function(input, output, session) {
         )
       )
 
+      col_defs[["Star"]] <- reactable::colDef(
+        name       = "\u2605",
+        width      = 32,
+        sortable   = FALSE,
+        filterable = FALSE,
+        html       = TRUE,
+        cell       = reactable::JS(
+          "function(cellInfo) {
+            var pid = String(cellInfo.row['pid'] || '');
+            if (!pid) return '';
+            var wl = Array.isArray(window.__watchlistPids) ? window.__watchlistPids : [];
+            var on = wl.indexOf(pid) >= 0;
+            return '<button data-watchlist-pid=\"' + pid + '\" ' +
+              'style=\"background:none;border:none;cursor:pointer;font-size:16px;padding:0;line-height:1;' +
+              'color:' + (on ? '#f59e0b' : '#94a3b8') + '\" ' +
+              'title=\"' + (on ? 'Remove from watchlist' : 'Add to watchlist') + '\">' +
+              (on ? '&#9733;' : '&#9734;') + '</button>';
+          }"
+        )
+      )
+
+      col_defs[["pid"]] <- reactable::colDef(show = FALSE)
+
       col_defs[["Team"]] <- reactable::colDef(
         name = "Team",
         minWidth = 110, maxWidth = 150,
@@ -2738,7 +2793,7 @@ shinyServer(function(input, output, session) {
         "function(rowInfo, column) {
          var vi = rowInfo.viewIndex;
          if (vi === undefined || vi === null) vi = rowInfo.index;
-         if (vi === undefined || vi === null || vi >= 50) return null;
+         if (vi === undefined || vi === null || vi >= 250) return null;
          var v = Number(rowInfo.values[column.id]);
          if (!isFinite(v)) return null;
          v = Math.max(0, Math.min(100, v));
@@ -2853,6 +2908,7 @@ shinyServer(function(input, output, session) {
         onClick = htmlwidgets::JS(
           "function(rowInfo, colInfo) {
             if (!rowInfo || !rowInfo.row) return;
+            if (colInfo && colInfo.id === 'Star') return;
             if (!window.Shiny) return;
             if (typeof Shiny.setInputValue === 'function') {
               Shiny.setInputValue('radar_table_click', rowInfo.row.Name, {priority: 'event'});
@@ -2917,6 +2973,7 @@ shinyServer(function(input, output, session) {
           }
         }"))
       if (profiling_enabled()) message("[radarPlayerTable] reactable built")
+      session$sendCustomMessage("watchlist_update", list(pids = isolate(watchlist_rv())))
       out_tbl
     })
   })

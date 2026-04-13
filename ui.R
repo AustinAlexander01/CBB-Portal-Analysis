@@ -819,6 +819,40 @@ shinyUI(
 })();
 ")),
         tags$script(HTML("
+(function () {
+  window.__watchlistPids = [];
+
+  $(document).on('shiny:connected', function () {
+    var stored = [];
+    try { stored = JSON.parse(localStorage.getItem('watchlist_pids') || '[]'); } catch (e) {}
+    if (!Array.isArray(stored)) stored = [];
+    window.__watchlistPids = stored;
+    Shiny.setInputValue('watchlist_init', stored, { priority: 'event' });
+  });
+
+  Shiny.addCustomMessageHandler('watchlist_update', function (msg) {
+    window.__watchlistPids = Array.isArray(msg.pids) ? msg.pids : [];
+    try { localStorage.setItem('watchlist_pids', JSON.stringify(window.__watchlistPids)); } catch (e) {}
+    document.querySelectorAll('[data-watchlist-pid]').forEach(function (el) {
+      var pid = el.getAttribute('data-watchlist-pid');
+      var on  = window.__watchlistPids.indexOf(pid) >= 0;
+      el.textContent = on ? '\u2605' : '\u2606';
+      el.style.color = on ? '#f59e0b' : '#94a3b8';
+      el.title       = on ? 'Remove from watchlist' : 'Add to watchlist';
+    });
+  });
+
+  // Event delegation: catch star button clicks without inline onclick (avoids HTML quote escaping)
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-watchlist-pid]') : null;
+    if (!btn) return;
+    var pid = btn.getAttribute('data-watchlist-pid');
+    if (!pid || !window.Shiny || typeof Shiny.setInputValue !== 'function') return;
+    Shiny.setInputValue('watchlist_star_click', { pid: pid, ts: Date.now() }, { priority: 'event' });
+  });
+})();
+")),
+        tags$script(HTML("
 (function() {
   var last = null;
   function setShinyInputValue(name, value, opts) {
@@ -888,7 +922,7 @@ $(document).on('shiny:disconnected', function() {
         titlePanel("Player Radar Chart Comparison"),
         fluidRow(
           column(
-            width = 6,
+            width = 7,
             selectizeInput("year_filter", "Year", choices = ui_year_choices, selected = head(ui_year_choices, 1), multiple = TRUE),
             tags$script(HTML("
 (function() {
@@ -960,7 +994,8 @@ $(document).on('shiny:disconnected', function() {
             div(
               style = "margin-left: 16px; margin-right: 16px; margin-bottom: 6px; display: flex; gap: 24px; align-items: center;",
               checkboxInput("portal_only", "Portal Players Only", value = FALSE),
-              checkboxInput("uncommitted_only", "Uncommitted Only", value = FALSE)
+              checkboxInput("uncommitted_only", "Uncommitted Only", value = FALSE),
+              checkboxInput("watchlist_only", "Watchlist Only \u2605", value = FALSE)
             ),
             div(
               id = "radarTableContainer",
@@ -1045,7 +1080,7 @@ $(document).on('shiny:disconnected', function() {
             )
           ),
           column(
-            width = 6,
+            width = 5,
             tags$div(
               class = "radar-plot-outer",
               tags$div(
@@ -1058,11 +1093,14 @@ $(document).on('shiny:disconnected', function() {
                 )
               )
             ),
-            uiOutput("playerProfiles"),
-            uiOutput("careerSimilarity"),
-            fluidRow(
-              column(width = 6, uiOutput("playerStrengths")),
-              column(width = 6, uiOutput("playerWeaknesses"))
+            tags$div(
+              style = "font-size: 0.88em;",
+              uiOutput("playerProfiles"),
+              uiOutput("careerSimilarity"),
+              fluidRow(
+                column(width = 6, uiOutput("playerStrengths")),
+                column(width = 6, uiOutput("playerWeaknesses"))
+              )
             )
           )
         ),
