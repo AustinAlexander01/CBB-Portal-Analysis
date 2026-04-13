@@ -1129,14 +1129,18 @@ $(document).on('shiny:disconnected', function() {
                     var liveLegSize = (fl.legend && fl.legend.font)
                       ? (fl.legend.font.size || 17) : 17;
 
-                    // Scale export fonts so text appears the same CSS size in the modal
-                    // as it does in the live chart, regardless of device.
-                    // Formula: exportSize = liveSize × 700 / modalDisplayWidth
-                    // On mobile (modal ≤ 95vw ≈ 408px) this scales up to compensate
-                    // for image shrinkage; on desktop (modal = 700px, 1:1) it's a no-op.
+                    // Scale export fonts so text looks proportionally correct in the
+                    // saved image. We take the smaller of:
+                    //   - modalDisplayW: accounts for image being shrunk to fit the modal
+                    //   - el.offsetWidth: accounts for the export canvas (700px) being
+                    //     larger than the live chart, making text look smaller against
+                    //     a proportionally bigger polar circle
+                    // Using min() of both ensures we always scale UP enough for both effects.
                     var modalDisplayW = Math.min(700, window.innerWidth * 0.95);
-                    var exportAngSize = Math.round(liveAngSize * 700 / modalDisplayW);
-                    var exportLegSize = Math.round(liveLegSize * 700 / modalDisplayW);
+                    var chartW        = el.offsetWidth || 700;
+                    var divisor       = Math.min(chartW, modalDisplayW);
+                    var exportAngSize = Math.round(liveAngSize * 700 / divisor);
+                    var exportLegSize = Math.round(liveLegSize * 700 / divisor);
 
                     Plotly.relayout(el, {
                       'polar.angularaxis.tickfont.size': exportAngSize,

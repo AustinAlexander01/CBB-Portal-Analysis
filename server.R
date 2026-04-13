@@ -3220,9 +3220,9 @@ shinyServer(function(input, output, session) {
       margin_cfg <- if (is_narrow) {
         list(l = 15, r = 15, t = 5, b = 110)
       } else {
-        list(l = 60, r = 60, t = 95, b = 95)
+        list(l = 40, r = 40, t = 75, b = 90)
       }
-      caption_y_val <- if (is_narrow) -0.10 else -0.07
+      caption_y_val <- if (is_narrow) -0.05 else -0.04
 
       p <- p %>%
         plotly::layout(
@@ -3269,16 +3269,17 @@ shinyServer(function(input, output, session) {
       p <- p %>% plotly::layout(
         paper_bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
         plot_bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
-        font = list(color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222"),
+        font   = list(color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222"),
+        legend = list(font = list(size = 13L)),   # cap desktop legend (build_radar sets 17)
         polar = list(
-          domain = list(x = c(0.05, 0.95), y = c(0, 0.83)),
+          domain = list(x = c(0.05, 0.95), y = c(0, 0.90)),
           bgcolor = if (isTRUE(input$dark_mode)) "#111827" else "#ffffff",
           angularaxis = list(
             gridcolor = if (isTRUE(input$dark_mode)) "#334155" else "#d1d5db",
             linecolor = if (isTRUE(input$dark_mode)) "#475569" else "#9ca3af",
             tickfont = list(
               color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222",
-              size  = if (is_narrow) 13L else if (identical(input$view_mode, "Individual Stats")) 10L else 12L
+              size  = if (is_narrow) 8L else if (identical(input$view_mode, "Individual Stats")) 9L else 10L
             )
           ),
           radialaxis = list(
@@ -3291,10 +3292,10 @@ shinyServer(function(input, output, session) {
 
       if (is_narrow) {
         p <- p %>% plotly::layout(
-          margin = list(l = 20, r = 20, t = 90, b = 90),
-          polar  = list(domain = list(x = c(0.05, 0.95), y = c(0, 0.83))),
+          margin = list(l = 10, r = 10, t = 45, b = 85),
+          polar  = list(domain = list(x = c(0.12, 0.88), y = c(0, 0.92))),
           legend = list(orientation = "v", x = 0.5, xanchor = "center",
-                        y = 1.0, yanchor = "bottom", font = list(size = 12))
+                        y = 1.0, yanchor = "bottom", font = list(size = 10))
         )
       }
 
