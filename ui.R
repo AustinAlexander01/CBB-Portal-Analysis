@@ -611,18 +611,7 @@ shinyUI(
         min-height: 300px !important;
       }
 
-      /* Shrink Plotly tick/axis label text inside the radar (SVG) */
-      #radarPlot .xtick text,
-      #radarPlot .ytick text,
-      #radarPlot .angularaxistick text,
-      #radarPlot .radialaxistick text {
-        font-size: 9px !important;
-      }
-
-      /* Shrink legend text a bit */
-      #radarPlot g.legend text {
-        font-size: 11px !important;
-      }
+      /* Font sizes for the radar are controlled via Plotly layout (is_narrow branch in server.R) */
     }
 
     /* --- Reactable table density --- */
@@ -673,8 +662,10 @@ shinyUI(
        100vw - 90px (Bootstrap + Plotly l/r padding) + 125px (Plotly t+b margins) = 100vw + 35px */
     @media (max-width: 768px) and (orientation: portrait) {
       #radarPlot {
-        height: calc(100vw + 35px) !important;
+        /* Square chart: viewport width minus Bootstrap side gutters (~30px) */
+        height: calc(100vw - 30px) !important;
         min-height: 300px !important;
+        max-height: 520px !important;
       }
     }
     /* Prevent iOS font inflation on orientation change */
@@ -1006,10 +997,10 @@ $(document).on('shiny:disconnected', function() {
             helpText("Tip: Hold Ctrl/Cmd to select multiple players (max 3)."),
             tags$hr(),
             div(
-              style = "display:flex; align-items:center; justify-content:space-between; gap:12px;",
+              style = "display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;",
               h4("Players (Composite Percentiles)", style = "margin: 0;"),
               div(
-                style = "display:flex; align-items:center; gap:8px;",
+                style = "display:flex; align-items:center; gap:6px; flex-wrap:wrap;",
                 actionButton(
                   inputId = "radar_reset_players",
                   label   = "Clear selection(s)",
@@ -1138,14 +1129,20 @@ $(document).on('shiny:disconnected', function() {
                     var liveLegSize = (fl.legend && fl.legend.font)
                       ? (fl.legend.font.size || 17) : 17;
 
-                    // Temporarily bump fonts for a readable export image
+                    // Scale export fonts so text appears the same CSS size in the modal
+                    // as it does in the live chart, regardless of device.
+                    // Formula: exportSize = liveSize × 700 / modalDisplayWidth
+                    // On mobile (modal ≤ 95vw ≈ 408px) this scales up to compensate
+                    // for image shrinkage; on desktop (modal = 700px, 1:1) it's a no-op.
+                    var modalDisplayW = Math.min(700, window.innerWidth * 0.95);
+                    var exportAngSize = Math.round(liveAngSize * 700 / modalDisplayW);
+                    var exportLegSize = Math.round(liveLegSize * 700 / modalDisplayW);
+
                     Plotly.relayout(el, {
-                      'polar.angularaxis.tickfont.size': 20,
-                      'legend.font.size': 15
+                      'polar.angularaxis.tickfont.size': exportAngSize,
+                      'legend.font.size': exportLegSize
                     })
                     .then(function() {
-                      // 700x700 @ scale:1 stays near 1:1 in the modal on desktop,
-                      // ~2x shrink on mobile — size-28 text reads as ~14 on phone
                       return Plotly.toImage(el, { format: 'png', width: 700, height: 700, scale: 1 });
                     })
                     .then(function(dataUrl) {

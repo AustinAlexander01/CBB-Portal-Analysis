@@ -3278,7 +3278,7 @@ shinyServer(function(input, output, session) {
             linecolor = if (isTRUE(input$dark_mode)) "#475569" else "#9ca3af",
             tickfont = list(
               color = if (isTRUE(input$dark_mode)) "#e5e7eb" else "#222222",
-              size  = if (is_narrow) 9L else if (identical(input$view_mode, "Individual Stats")) 10L else 12L
+              size  = if (is_narrow) 13L else if (identical(input$view_mode, "Individual Stats")) 10L else 12L
             )
           ),
           radialaxis = list(
@@ -3291,10 +3291,10 @@ shinyServer(function(input, output, session) {
 
       if (is_narrow) {
         p <- p %>% plotly::layout(
-          margin = list(l = 52, r = 52, t = 60, b = 100),
-          polar  = list(domain = list(x = c(0.10, 0.90))),
-          legend = list(orientation = "h", x = 0, xanchor = "left",
-                        y = 1.04, yanchor = "bottom", font = list(size = 9))
+          margin = list(l = 20, r = 20, t = 90, b = 90),
+          polar  = list(domain = list(x = c(0.05, 0.95), y = c(0, 0.83))),
+          legend = list(orientation = "v", x = 0.5, xanchor = "center",
+                        y = 1.0, yanchor = "bottom", font = list(size = 12))
         )
       }
 
