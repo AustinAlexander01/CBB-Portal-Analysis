@@ -602,6 +602,11 @@ shinyUI(
     #radarPlot {
       height: calc(var(--radarPlotVh, 72) * 1vh) !important;
       min-height: 480px !important;
+      overflow: hidden !important;
+    }
+    #radarPlot .plot-container,
+    #radarPlot .svg-container {
+      overflow: hidden !important;
     }
 
     @media (max-width: 768px) {
@@ -1088,26 +1093,69 @@ $(document).on('shiny:disconnected', function() {
                   onclick = "
                     var btn = this;
                     var el = document.getElementById('radarPlot');
-                    if (el && window.Plotly) {
-                      var orig = btn.textContent;
-                      btn.disabled = true;
-                      btn.textContent = 'Exporting...';
-                      var w = Math.max(Math.round(el.offsetWidth) || 700, 680);
-                      var h = Math.max(Math.round(el.offsetHeight) || 500, 480);
-                      Plotly.downloadImage(el, {
-                        format: 'png',
-                        width: w,
-                        height: h,
-                        scale: 3,
-                        filename: 'radar_export'
-                      }).then(function() {
-                        btn.disabled = false;
-                        btn.textContent = orig;
-                      }).catch(function() {
-                        btn.disabled = false;
-                        btn.textContent = orig;
+                    if (!el || !window.Plotly) return;
+                    var orig = btn.textContent;
+                    btn.disabled = true;
+                    btn.textContent = 'Exporting...';
+
+                    // Capture live layout so we can restore it after export
+                    var fl = el._fullLayout || {};
+                    var liveAngSize = (fl.polar && fl.polar.angularaxis && fl.polar.angularaxis.tickfont)
+                      ? (fl.polar.angularaxis.tickfont.size || 10) : 10;
+                    var liveLegSize = (fl.legend && fl.legend.font)
+                      ? (fl.legend.font.size || 13) : 13;
+                    var liveMargin  = fl.margin
+                      ? { l: fl.margin.l, r: fl.margin.r, t: fl.margin.t, b: fl.margin.b }
+                      : { l: 40, r: 40, t: 75, b: 90 };
+                    var liveDomain  = (fl.polar && fl.polar.domain)
+                      ? { x: fl.polar.domain.x.slice(), y: fl.polar.domain.y.slice() }
+                      : { x: [0.05, 0.95], y: [0, 0.90] };
+                    var liveCaption = (fl.annotations && fl.annotations[1])
+                      ? (fl.annotations[1].text || '') : '';
+
+                    // Export at a fixed 1200x1000 canvas; scale fonts relative to live width
+                    var exportW = 1200;
+                    var exportH = 1000;
+                    var ratio   = exportW / (el.offsetWidth || 800);
+                    var exportAngSize = Math.round(liveAngSize * ratio);
+                    var exportLegSize = Math.round(liveLegSize * ratio);
+
+                    var restore = function() {
+                      return Plotly.relayout(el, {
+                        'margin.l': liveMargin.l, 'margin.r': liveMargin.r,
+                        'margin.t': liveMargin.t, 'margin.b': liveMargin.b,
+                        'polar.angularaxis.tickfont.size': liveAngSize,
+                        'legend.font.size': liveLegSize,
+                        'polar.domain.x': liveDomain.x,
+                        'polar.domain.y': liveDomain.y,
+                        'annotations[1].text': liveCaption
                       });
-                    }
+                    };
+
+                    Plotly.relayout(el, {
+                      'margin.l': 60, 'margin.r': 60, 'margin.t': 95, 'margin.b': 95,
+                      'polar.angularaxis.tickfont.size': exportAngSize,
+                      'legend.font.size': exportLegSize,
+                      'polar.domain.x': [0.05, 0.95],
+                      'polar.domain.y': [0, 0.90],
+                      'annotations[1].text': 'Data: barttorvik.com<br>Created on https://cbb.arkansasquant.com/'
+                    })
+                    .then(function() {
+                      return Plotly.downloadImage(el, {
+                        format: 'png', width: exportW, height: exportH,
+                        scale: 2, filename: 'radar_export'
+                      });
+                    })
+                    .then(restore)
+                    .then(function() {
+                      btn.disabled = false;
+                      btn.textContent = orig;
+                    })
+                    .catch(function() {
+                      restore();
+                      btn.disabled = false;
+                      btn.textContent = orig;
+                    });
                   ",
                   "\u2193 Export PNG"
                 ),
