@@ -2746,16 +2746,16 @@ shinyServer(function(input, output, session) {
           headerStyle = list(whiteSpace = "nowrap"),
           style = reactable::JS("function(rowInfo) {
             var logo = rowInfo.values['ToTeamLogo'] || '';
-            return logo ? { background: '#ffffff' } : null;
+            return logo ? { background: '#ffffff', overflow: 'visible' } : null;
           }"),
           cell = reactable::JS("function(cellInfo) {
             var logo = cellInfo.row['ToTeamLogo'] || '';
             var name = String(cellInfo.value || '');
             if (!name || name === '(Uncommitted)') return '';
             if (logo) {
-              return '<div style=\"display:flex;justify-content:center;align-items:center;height:100%\">' +
+              return '<div style=\"position:relative;height:100%;overflow:visible\">' +
                 '<img src=\"' + logo + '\" title=\"' + name + '\"' +
-                ' style=\"width:22px;height:22px;object-fit:contain\" /></div>';
+                ' style=\"position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;object-fit:contain\" /></div>';
             }
             var fs = name.length > 22 ? '9px' : name.length > 17 ? '10px' : '11px';
             return '<span style=\"font-size:' + fs + ';white-space:nowrap;overflow:hidden;' +

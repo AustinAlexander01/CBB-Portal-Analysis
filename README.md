@@ -15,7 +15,8 @@ CBB Portal Analysis lets coaches, analysts, and fans compare up to three D1 play
 ## Features
 
 - **Radar chart comparison** — visualize up to 3 players across 11 composite dimensions (Scoring, Defense, Rebounding, Ball Handling, Perimeter/Interior Offense & Defense, and more), scaled to D1 percentiles
-- **Transfer portal filter** — toggle to show only portal-eligible players in both the table and radar player pool
+- **Transfer portal filters** — toggle to show only portal-eligible players; additional filters for uncommitted players and your personal watchlist
+- **Watchlist** — star (★) any player in the table to save them to a persistent watchlist (stored in browser localStorage); filter the table to watchlisted players only
 - **Interactive player table** — server-side SQL filtering with range sliders, multi-select dropdowns, and column search; click a row to add a player to the radar
 - **Player profile cards** — strength/weakness labels, benchmarks vs. D1 averages and 1st-round draft pick averages, similar player discovery
 - **Individual stat view** — switch from composite metrics to raw/advanced stats on the radar axes
@@ -33,7 +34,9 @@ CBB Portal Analysis lets coaches, analysts, and fans compare up to three D1 play
 | Database | Supabase (PostgreSQL) |
 | DB connection | DBI / RPostgres / pool |
 | Dependency management | renv |
-| Hosting | shinyapps.io (Posit Cloud) |
+| Containerization | Docker |
+| CI/CD | GitHub Actions → GHCR |
+| Hosting | Railway + Cloudflare |
 
 ---
 
@@ -45,11 +48,15 @@ CBB Portal Analysis/
 ├── ui.R                # Full UI definition: layout, tabs, inputs, dark mode CSS/JS
 ├── server.R            # Server logic: data loading, reactive filters, SQL queries, outputs
 ├── plotly_helpers.R    # Radar chart rendering, similarity matching, player profile utilities
+├── Dockerfile          # Container image definition; R packages restored via renv at build time
+├── railway.toml        # Railway deployment config (health check)
+├── shiny-server.conf   # Shiny server configuration inside the container
 ├── renv.lock           # Exact package versions (107 packages) — used by renv::restore()
 ├── renv/               # renv infrastructure (do not edit manually)
 ├── .Rprofile           # Auto-activates renv on project open
-├── manifest.json       # shinyapps.io deployment manifest
-└── rsconnect/          # Deployment metadata for Posit Connect
+├── .github/workflows/  # GitHub Actions: builds Docker image and pushes to GHCR on push to main
+├── manifest.json       # Legacy shinyapps.io artifact — no longer used
+└── rsconnect/          # Legacy Posit Connect metadata — no longer used
 ```
 
 ---
