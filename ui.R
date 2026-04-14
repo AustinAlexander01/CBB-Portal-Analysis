@@ -497,8 +497,21 @@ shinyUI(
     }
 
     #playerProfiles .well {
-      max-width: 1000px;
-      margin: 16px auto 0;
+      margin: 0;
+    }
+
+    .profile-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    @media (min-width: 992px) {
+      .profile-grid {
+        grid-template-columns: repeat(3, 1fr);
+        align-items: start;
+      }
     }
 
     .label-success {
@@ -858,7 +871,8 @@ shinyUI(
 ")),
         tags$script(HTML("
 (function () {
-  window.__watchlistPids = [];
+  window.__watchlistPids    = [];
+  window.__watchlistPending = {}; // {pid: 'add'|'remove'} — optimistic changes awaiting server confirmation
 
   $(document).on('shiny:connected', function () {
     var stored = [];
@@ -868,24 +882,59 @@ shinyUI(
     Shiny.setInputValue('watchlist_init', stored, { priority: 'event' });
   });
 
-  Shiny.addCustomMessageHandler('watchlist_update', function (msg) {
-    window.__watchlistPids = Array.isArray(msg.pids) ? msg.pids : [];
-    try { localStorage.setItem('watchlist_pids', JSON.stringify(window.__watchlistPids)); } catch (e) {}
+  function applyWatchlistToDOM(pids) {
     document.querySelectorAll('[data-watchlist-pid]').forEach(function (el) {
-      var pid = el.getAttribute('data-watchlist-pid');
-      var on  = window.__watchlistPids.indexOf(pid) >= 0;
+      var p  = el.getAttribute('data-watchlist-pid');
+      var on = pids.indexOf(p) >= 0;
       el.textContent = on ? '\u2605' : '\u2606';
       el.style.color = on ? '#f59e0b' : '#94a3b8';
       el.title       = on ? 'Remove from watchlist' : 'Add to watchlist';
     });
+  }
+
+  Shiny.addCustomMessageHandler('watchlist_update', function (msg) {
+    var serverPids = Array.isArray(msg.pids) ? msg.pids : [];
+    // Re-apply any pending optimistic changes on top of the server state,
+    // and clear entries that the server has confirmed.
+    var effective = serverPids.slice();
+    Object.keys(window.__watchlistPending).forEach(function (p) {
+      var action = window.__watchlistPending[p];
+      var inServer = serverPids.indexOf(p) >= 0;
+      if (action === 'add') {
+        if (inServer) {
+          delete window.__watchlistPending[p]; // confirmed
+        } else {
+          if (effective.indexOf(p) < 0) effective.push(p); // still pending
+        }
+      } else { // 'remove'
+        if (!inServer) {
+          delete window.__watchlistPending[p]; // confirmed
+        } else {
+          var i = effective.indexOf(p);
+          if (i >= 0) effective.splice(i, 1); // still pending
+        }
+      }
+    });
+    window.__watchlistPids = effective;
+    try { localStorage.setItem('watchlist_pids', JSON.stringify(effective)); } catch (e) {}
+    applyWatchlistToDOM(effective);
   });
 
   // Event delegation: catch star button clicks without inline onclick (avoids HTML quote escaping)
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('[data-watchlist-pid]') : null;
     if (!btn) return;
+    e.stopPropagation(); // prevent reactable onClick from firing
     var pid = btn.getAttribute('data-watchlist-pid');
     if (!pid || !window.Shiny || typeof Shiny.setInputValue !== 'function') return;
+    // Optimistic update: toggle immediately, record as pending until server confirms
+    var wl  = Array.isArray(window.__watchlistPids) ? window.__watchlistPids.slice() : [];
+    var idx = wl.indexOf(pid);
+    var on  = idx < 0; // will be ON after toggle
+    if (idx >= 0) { wl.splice(idx, 1); } else { wl.push(pid); }
+    window.__watchlistPids          = wl;
+    window.__watchlistPending[pid]  = on ? 'add' : 'remove';
+    applyWatchlistToDOM(wl);
     Shiny.setInputValue('watchlist_star_click', { pid: pid, ts: Date.now() }, { priority: 'event' });
   });
 })();
@@ -1257,7 +1306,6 @@ $(document).on('shiny:disconnected', function() {
               ),
               tags$div(
                 style = "font-size: 0.88em;",
-                uiOutput("playerProfiles"),
                 uiOutput("careerSimilarity"),
                 fluidRow(
                   column(width = 6, uiOutput("playerStrengths")),
@@ -1265,6 +1313,13 @@ $(document).on('shiny:disconnected', function() {
                 )
               )
             )
+          )
+        ),
+        fluidRow(
+          column(
+            width = 12,
+            style = "font-size: 0.88em; padding-top: 8px;",
+            uiOutput("playerProfiles")
           )
         ),
         fluidRow(

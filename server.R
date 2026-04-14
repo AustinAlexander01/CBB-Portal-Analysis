@@ -272,7 +272,7 @@ composite_labels <- c(
   `Interior Defense`     = "INT DEF",
   `Interior Offense`     = "INT OFF",
   `Perimeter Offense`    = "PERIM OFF",
-  `Unassisted Scoring`   = "UNAST SCOR",
+  `Unassisted Scoring`   = "UNASTD SC",
   `Midrange Offense`     = "MID OFF",
   `Ball Handling`        = "PLAY MAKING",
   Rebounding             = "REB",
@@ -340,6 +340,7 @@ timed <- function(label, expr) {
 TABLE_DISPLAY_COLS <- unique(c(
   # Identity / metadata
   "Name", "Team", "Conf", "Role", "Year", "Player", "Ht", "G", "Min_pct", "Pick", "pid",
+  "is_transfer_in", "is_transfer_out",
   # Composite rank metrics
   "ptir", "edmr", "dsr", "dpmr","Stps",
   # Rank model variables
@@ -1800,7 +1801,7 @@ build_table_query <- function(
 
   if (isTRUE(shiny_portal_only) && length(portal_pids) > 0) {
     in_body <- add_params_in(as.character(portal_pids))
-    conditions <- c(conditions, sprintf('"pid" IN (%s)', in_body))
+    conditions <- c(conditions, sprintf('("pid" IN (%s) OR "is_transfer_out" = TRUE)', in_body))
   }
 
   # ---- Composite slider filters (Shiny-side external sliders) ----
@@ -2199,11 +2200,12 @@ shinyServer(function(input, output, session) {
       # cap at 3 players (keep earliest selections)
       if (length(new_sel) > 3) new_sel <- new_sel[seq_len(3)]
 
-      # Ensure clicked player is present in choices; otherwise selectize will silently ignore it
+      # Ensure clicked player AND all currently selected players are in choices;
+      # otherwise server-side selectize silently drops any selected value not in the choices list.
       ord <- isolate(player_choice_order())
       if (is.null(ord)) ord <- character(0)
       ord <- as.character(ord)
-      choices_all <- unique(c(ord, clicked))
+      choices_all <- unique(c(ord, current, clicked))
 
       updateSelectizeInput(
         session,
@@ -2238,7 +2240,8 @@ shinyServer(function(input, output, session) {
     if (length(input$team_filter) > 0) df <- df %>% dplyr::filter(.data$Team %in% input$team_filter)
     if (length(input$role_filter) > 0) df <- df %>% dplyr::filter(.data$Role %in% input$role_filter)
     if ("pid" %in% names(df)) {
-      df$Portal <- ifelse(df$pid %in% portal_pids_rv(), "Yes", "No")
+      xfer_out_flag <- if ("is_transfer_out" %in% names(df)) !is.na(df$is_transfer_out) & df$is_transfer_out else FALSE
+      df$Portal <- ifelse(df$pid %in% portal_pids_rv() | xfer_out_flag, "Yes", "No")
     } else {
       df$Portal <- "No"
     }
@@ -2388,9 +2391,10 @@ shinyServer(function(input, output, session) {
         }
       )
 
-      # Add Portal column from pre-fetched portal pids
+      # Add Portal column from pre-fetched portal pids (also flag transfer-outs as portal players)
       if ("pid" %in% names(result)) {
-        result$Portal <- ifelse(result$pid %in% portal_pids_rv(), "Yes", "No")
+        xfer_out_flag <- if ("is_transfer_out" %in% names(result)) !is.na(result$is_transfer_out) & result$is_transfer_out else FALSE
+        result$Portal <- ifelse(result$pid %in% portal_pids_rv() | xfer_out_flag, "Yes", "No")
       } else {
         result$Portal <- "No"
       }
@@ -2511,8 +2515,18 @@ shinyServer(function(input, output, session) {
         unique(c(lead_extras, base, tail_extras))
       }
 
-      # metadata columns (only if present) — display order: Portal, Year, Conf, Class, Role, Team, To Team
+      # metadata columns (only if present) — display order: Portal, Transferred In, Year, Conf, Class, Role, Team, To Team
       meta_cols <- intersect(c("Portal", "Year", "Conf", "Player", "Role", "Team"), names(df))
+      # Insert is_transfer_in right after Portal
+      if ("is_transfer_in" %in% names(df)) {
+        portal_pos <- which(meta_cols == "Portal")
+        if (length(portal_pos) > 0) {
+          tail_cols <- if (portal_pos < length(meta_cols)) meta_cols[seq.int(portal_pos + 1L, length(meta_cols))] else character(0)
+          meta_cols <- c(meta_cols[seq_len(portal_pos)], "is_transfer_in", tail_cols)
+        } else {
+          meta_cols <- c("is_transfer_in", meta_cols)
+        }
+      }
       # Insert ToTeam right after Team (or at end if Team absent)
       if ("ToTeam" %in% names(df)) {
         team_pos <- which(meta_cols == "Team")
@@ -2550,7 +2564,9 @@ shinyServer(function(input, output, session) {
         dplyr::select(dplyr::any_of(table_cols)) %>%
         dplyr::mutate(
           Year = if ("Year" %in% names(.)) suppressWarnings(as.integer(.data$Year)) else NULL,
-          Conf = if ("Conf" %in% names(.)) as.character(.data$Conf) else NULL
+          Conf = if ("Conf" %in% names(.)) as.character(.data$Conf) else NULL,
+          is_transfer_in  = if ("is_transfer_in"  %in% names(.)) ifelse(!is.na(.data$is_transfer_in)  & .data$is_transfer_in,  "Yes", "No") else NULL,
+          is_transfer_out = if ("is_transfer_out" %in% names(.)) ifelse(!is.na(.data$is_transfer_out) & .data$is_transfer_out, "Yes", "No") else NULL
         )
       table_df$.idx  <- seq_len(nrow(table_df))
       table_df$Star  <- integer(nrow(table_df))
@@ -2713,6 +2729,21 @@ shinyServer(function(input, output, session) {
 
       col_defs[["pid"]] <- reactable::colDef(show = FALSE)
 
+      if ("is_transfer_in" %in% names(table_df)) {
+        col_defs[["is_transfer_in"]] <- reactable::colDef(
+          name       = "Xfer In",
+          minWidth   = 80, maxWidth = 95,
+          filterable = TRUE,
+          filterMethod = reactable::JS("filterMulti"),
+          filterInput  = reactable::JS("multiSelectFilter"),
+          sortable   = TRUE,
+          style      = list(textAlign = "center", fontSize = "11px")
+        )
+      }
+      if ("is_transfer_out" %in% names(table_df)) {
+        col_defs[["is_transfer_out"]] <- reactable::colDef(show = FALSE)
+      }
+
       col_defs[["Team"]] <- reactable::colDef(
         name = "Team",
         minWidth = 110, maxWidth = 150,
@@ -2788,7 +2819,7 @@ shinyServer(function(input, output, session) {
         filterInput = reactable::JS("multiSelectFilter"),
         style = list(whiteSpace = "nowrap")
       )
-      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role", "ToTeam", "Portal"))) {
+      for (mc in setdiff(meta_cols, c("Team", "Conf", "Role", "ToTeam", "Portal", "is_transfer_in", "is_transfer_out"))) {
         col_defs[[mc]] <- reactable::colDef(
           name = if (identical(mc, "Player")) "Class" else mc,
           minWidth = if (mc %in% c("Year", "Player")) 55 else 55,
@@ -2817,7 +2848,8 @@ shinyServer(function(input, output, session) {
          return {
            background: palette[idx],
            color: '#0f172a',
-           fontWeight: 600
+           fontWeight: 600,
+           fontSize: '10px'
          };
        }"
       )
@@ -3404,16 +3436,24 @@ shinyServer(function(input, output, session) {
           # Each season is a distinct Name in the DB (e.g. "Cooper Flagg (25) (Duke)").
           # Fetch all seasons for this pid so we can link directly by Name — the same
           # mechanism used by Most Similar Players (Drafted).
+          xfer_in_col  <- if ("is_transfer_in"  %in% names(player_stats_all_with_composites)) "is_transfer_in"  else NULL
+          xfer_out_col <- if ("is_transfer_out" %in% names(player_stats_all_with_composites)) "is_transfer_out" else NULL
+          select_cols  <- c("Name", "Year", "Team", "Role", "ptir", xfer_in_col, xfer_out_col)
           seasons_df <- player_stats_all_with_composites %>%
             dplyr::filter(!is.na(pid) & pid == player_pid) %>%
-            dplyr::select(Name, Year, Team, ptir) %>%
-            dplyr::group_by(Name, Year, Team) %>%
-            dplyr::summarize(ptir = dplyr::first(ptir), .groups = "drop") %>%
+            dplyr::select(dplyr::all_of(select_cols)) %>%
+            dplyr::group_by(Name, Year, Team, Role) %>%
+            dplyr::summarize(
+              ptir           = dplyr::first(ptir),
+              is_transfer_in  = if (!is.null(xfer_in_col))  dplyr::first(.data[[xfer_in_col]])  else FALSE,
+              is_transfer_out = if (!is.null(xfer_out_col)) dplyr::first(.data[[xfer_out_col]]) else FALSE,
+              .groups = "drop"
+            ) %>%
             dplyr::arrange(dplyr::desc(Year))
 
           if (nrow(seasons_df) <= 1) return(NULL)
 
-          # Compute each season's national PTIR rank within its year.
+          # Compute overall and role-specific PTIR rank within each season year.
           seasons_df$ptir_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
             yr  <- seasons_df$Year[i]
             val <- seasons_df$ptir[i]
@@ -3424,22 +3464,85 @@ shinyServer(function(input, output, session) {
             sum(all_ptir > val, na.rm = TRUE) + 1L
           }, integer(1))
 
+          seasons_df$ptir_role_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
+            yr   <- seasons_df$Year[i]
+            val  <- seasons_df$ptir[i]
+            role <- seasons_df$Role[i]
+            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_integer_)
+            all_ptir <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == yr, Role == role, !is.na(ptir)) %>%
+              dplyr::pull(ptir)
+            sum(all_ptir > val, na.rm = TRUE) + 1L
+          }, integer(1))
+
+          # Transfer-out PTIR ranks: overall and role-specific, among transfer-out players that year.
+          xfer_col_exists <- !is.null(xfer_out_col) && xfer_out_col %in% names(player_stats_all_with_composites)
+          seasons_df$ptir_xfer_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
+            if (!isTRUE(seasons_df$is_transfer_out[i]) || !xfer_col_exists) return(NA_integer_)
+            yr  <- seasons_df$Year[i]
+            val <- seasons_df$ptir[i]
+            if (is.na(val)) return(NA_integer_)
+            all_ptir <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == yr, .data[[xfer_out_col]] == TRUE, !is.na(ptir)) %>%
+              dplyr::pull(ptir)
+            sum(all_ptir > val, na.rm = TRUE) + 1L
+          }, integer(1))
+
+          seasons_df$ptir_xfer_role_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
+            if (!isTRUE(seasons_df$is_transfer_out[i]) || !xfer_col_exists) return(NA_integer_)
+            yr   <- seasons_df$Year[i]
+            val  <- seasons_df$ptir[i]
+            role <- seasons_df$Role[i]
+            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_integer_)
+            all_ptir <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == yr, .data[[xfer_out_col]] == TRUE, Role == role, !is.na(ptir)) %>%
+              dplyr::pull(ptir)
+            sum(all_ptir > val, na.rm = TRUE) + 1L
+          }, integer(1))
+
           tagList(
             tags$hr(style = "margin: 10px 0;"),
             tags$h5("Player Seasons"),
             tags$ul(
               style = "padding-left: 18px; margin-bottom: 0;",
               lapply(seq_len(nrow(seasons_df)), function(i) {
-                season_name <- seasons_df$Name[i]
-                yr   <- seasons_df$Year[i]
-                tm   <- seasons_df$Team[i]
-                ptir_val  <- seasons_df$ptir[i]
-                ptir_rank <- seasons_df$ptir_rank[i]
-                rank_str <- if (!is.na(ptir_val) && !is.na(ptir_rank)) {
-                  paste0(" - PTIR: ", round(ptir_val, 1), " (#", ptir_rank, ")")
-                } else if (!is.na(ptir_val)) {
-                  paste0(" - PTIR: ", round(ptir_val, 1))
+                season_name      <- seasons_df$Name[i]
+                yr               <- seasons_df$Year[i]
+                tm               <- seasons_df$Team[i]
+                ptir_val         <- seasons_df$ptir[i]
+                ptir_rank        <- seasons_df$ptir_rank[i]
+                ptir_role_rank   <- seasons_df$ptir_role_rank[i]
+                ptir_xfer_rank      <- seasons_df$ptir_xfer_rank[i]
+                ptir_xfer_role_rank <- seasons_df$ptir_xfer_role_rank[i]
+                role             <- seasons_df$Role[i]
+                is_xfer_in       <- isTRUE(seasons_df$is_transfer_in[i])
+                is_xfer_out      <- isTRUE(seasons_df$is_transfer_out[i])
+
+                rank_str <- if (!is.na(ptir_val)) {
+                  # Overall + role block: "#23 OVR (#5 Pure PG)"
+                  ovr_block <- if (!is.na(ptir_rank)) {
+                    role_str <- if (!is.na(ptir_role_rank) && !is.na(role) && nzchar(role)) {
+                      paste0(" (#", ptir_role_rank, " ", role, ")")
+                    } else ""
+                    paste0("#", ptir_rank, " OVR", role_str)
+                  } else ""
+
+                  # Transfer block (only for transfer-out seasons): "#3 OVR Xfer (#1 Pure PG)"
+                  xfer_block <- if (is_xfer_out && !is.na(ptir_xfer_rank)) {
+                    xfer_role_str <- if (!is.na(ptir_xfer_role_rank) && !is.na(role) && nzchar(role)) {
+                      paste0(" (#", ptir_xfer_role_rank, " ", role, ")")
+                    } else ""
+                    paste0("#", ptir_xfer_rank, " OVR Xfer", xfer_role_str)
+                  } else ""
+
+                  ranks <- paste(Filter(nzchar, c(ovr_block, xfer_block)), collapse = "  |  ")
+                  if (nzchar(ranks)) {
+                    paste0(" - PTIR: ", round(ptir_val, 1), " \u2014 ", ranks)
+                  } else {
+                    paste0(" - PTIR: ", round(ptir_val, 1))
+                  }
                 } else ""
+
                 label <- paste0(yr, " \u2014 ", tm, rank_str)
                 if (season_name == player_name) {
                   # Current season — bold, no link
@@ -3482,7 +3585,7 @@ shinyServer(function(input, output, session) {
       )
     })
 
-    do.call(tagList, player_ui_list)
+    tags$div(class = "profile-grid", player_ui_list)
   })
 
 
