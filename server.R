@@ -3348,6 +3348,37 @@ shinyServer(function(input, output, session) {
     # percentile_stats which required loading all *_pct columns at startup.
     pct_df <- radar_percentile_data()
 
+    # Capture portal pids once for all profile cards
+    portal_pids <- portal_pids_rv()
+
+    # Tie-aware rank label: "T-N" if tied, "N" otherwise
+    rank_label <- function(val, pool) {
+      n_above <- sum(pool > val, na.rm = TRUE)
+      rk      <- n_above + 1L
+      tied    <- sum(pool == val, na.rm = TRUE) > 1L
+      if (tied) paste0("T-", rk) else as.character(rk)
+    }
+
+    # Build the transfer-out/portal ptir pool for a given year + optional role.
+    # Includes both DB-confirmed is_transfer_out rows AND current portal entrants.
+    xfer_ptir_pool <- function(yr, role_val = NULL) {
+      has_xfer_col <- "is_transfer_out" %in% names(player_stats_all_with_composites)
+      df <- player_stats_all_with_composites %>%
+        dplyr::filter(Year == yr, !is.na(ptir))
+      if (has_xfer_col) {
+        df <- df %>% dplyr::filter(
+          (!is.na(is_transfer_out) & is_transfer_out) |
+          (!is.na(pid) & pid %in% portal_pids)
+        )
+      } else {
+        df <- df %>% dplyr::filter(!is.na(pid) & pid %in% portal_pids)
+      }
+      if (!is.null(role_val) && !is.na(role_val) && nzchar(role_val)) {
+        df <- df %>% dplyr::filter(Role == role_val)
+      }
+      dplyr::pull(df, ptir)
+    }
+
     player_ui_list <- lapply(players_to_show, function(player_name) {
       row <- pct_df %>% dplyr::filter(Name == player_name)
 
@@ -3369,7 +3400,26 @@ shinyServer(function(input, output, session) {
       ast   <- if ("Ast" %in% names(stat_src)) round(stat_src$Ast[1], 1) else NA
       stl   <- if ("Stl" %in% names(stat_src)) round(stat_src$Stl[1], 1) else NA
       blk   <- if ("Blk" %in% names(stat_src)) round(stat_src$Blk[1], 1) else NA
-      ptir  <- if ("PredTransferImpactRating" %in% names(stat_src)) round(stat_src$PredTransferImpactRating[1], 1) else NA
+      ptir_raw <- if ("PredTransferImpactRating" %in% names(stat_src)) stat_src$PredTransferImpactRating[1] else NA_real_
+      ptir     <- if (!is.na(ptir_raw)) round(ptir_raw, 1) else NA
+
+      player_pid <- if ("pid" %in% names(raw_row) && nrow(raw_row) > 0) {
+        p <- raw_row$pid[1]; if (!is.na(p) && nzchar(p)) p else NA_character_
+      } else NA_character_
+      player_yr <- if ("Year" %in% names(raw_row) && nrow(raw_row) > 0) {
+        suppressWarnings(as.numeric(raw_row$Year[1]))
+      } else NA_real_
+      is_portal <- !is.na(player_pid) && player_pid %in% portal_pids
+
+      # Xfer ranks for the profile subtitle (all portal players, incl. single-season)
+      header_xfer_str <- if (is_portal && !is.na(ptir_raw) && !is.na(player_yr)) {
+        ovr_rk  <- rank_label(ptir_raw, xfer_ptir_pool(player_yr))
+        role_rk <- if (!is.na(role) && nzchar(role)) {
+          rank_label(ptir_raw, xfer_ptir_pool(player_yr, role))
+        } else NA_character_
+        role_sfx <- if (!is.na(role_rk)) paste0(" (#", role_rk, " ", role, ")") else ""
+        paste0("Xfer: #", ovr_rk, " OVR", role_sfx)
+      } else NA_character_
 
       row_data <- row %>% dplyr::select(-Name)
       # pct_df includes both the player and benchmark rows, so get_profile_labels
@@ -3382,11 +3432,12 @@ shinyServer(function(input, output, session) {
       strengths <- strengths[!is.na(strengths) & nzchar(strengths)]
       weaknesses <- weaknesses[!is.na(weaknesses) & nzchar(weaknesses)]
 
-      # Build "Role | Class" subtitle line
+      # Build "Role | Class | PTIR | Xfer ranks" subtitle line
       role_class_parts <- na.omit(c(
         if (!is.na(role) && nzchar(role)) role else NA_character_,
         if (!is.na(class) && nzchar(class)) class else NA_character_,
-        if (!is.na(ptir)) paste0("PTIR: ", ptir) else NA_character_
+        if (!is.na(ptir)) paste0("PTIR: ", ptir) else NA_character_,
+        header_xfer_str  # NA_character_ for non-portal players — omitted by na.omit
       ))
       role_class_line <- if (length(role_class_parts) > 0) {
         tags$p(em(paste(role_class_parts, collapse = " | ")))
@@ -3453,52 +3504,51 @@ shinyServer(function(input, output, session) {
 
           if (nrow(seasons_df) <= 1) return(NULL)
 
+          # Current-year portal players haven't committed yet so no future-year row exists,
+          # meaning is_transfer_out stays FALSE in the DB. Force it TRUE on their most
+          # recent season so Xfer PTIR ranks are shown for active portal players.
+          if (player_pid %in% portal_pids_rv()) {
+            most_recent_idx <- which.max(seasons_df$Year)
+            seasons_df$is_transfer_out[most_recent_idx] <- TRUE
+          }
+
           # Compute overall and role-specific PTIR rank within each season year.
+          # rank_label and xfer_ptir_pool are defined in the enclosing renderUI scope.
           seasons_df$ptir_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
-            yr  <- seasons_df$Year[i]
             val <- seasons_df$ptir[i]
-            if (is.na(val)) return(NA_integer_)
-            all_ptir <- player_stats_all_with_composites %>%
-              dplyr::filter(Year == yr, !is.na(ptir)) %>%
+            if (is.na(val)) return(NA_character_)
+            pool <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == seasons_df$Year[i], !is.na(ptir)) %>%
               dplyr::pull(ptir)
-            sum(all_ptir > val, na.rm = TRUE) + 1L
-          }, integer(1))
+            rank_label(val, pool)
+          }, character(1))
 
           seasons_df$ptir_role_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
-            yr   <- seasons_df$Year[i]
             val  <- seasons_df$ptir[i]
             role <- seasons_df$Role[i]
-            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_integer_)
-            all_ptir <- player_stats_all_with_composites %>%
-              dplyr::filter(Year == yr, Role == role, !is.na(ptir)) %>%
+            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_character_)
+            pool <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == seasons_df$Year[i], Role == role, !is.na(ptir)) %>%
               dplyr::pull(ptir)
-            sum(all_ptir > val, na.rm = TRUE) + 1L
-          }, integer(1))
+            rank_label(val, pool)
+          }, character(1))
 
-          # Transfer-out PTIR ranks: overall and role-specific, among transfer-out players that year.
-          xfer_col_exists <- !is.null(xfer_out_col) && xfer_out_col %in% names(player_stats_all_with_composites)
+          # Xfer PTIR ranks: pool = is_transfer_out OR current portal entrants (fixes
+          # current-year portal players who have no future committed season yet).
           seasons_df$ptir_xfer_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
-            if (!isTRUE(seasons_df$is_transfer_out[i]) || !xfer_col_exists) return(NA_integer_)
-            yr  <- seasons_df$Year[i]
+            if (!isTRUE(seasons_df$is_transfer_out[i])) return(NA_character_)
             val <- seasons_df$ptir[i]
-            if (is.na(val)) return(NA_integer_)
-            all_ptir <- player_stats_all_with_composites %>%
-              dplyr::filter(Year == yr, .data[[xfer_out_col]] == TRUE, !is.na(ptir)) %>%
-              dplyr::pull(ptir)
-            sum(all_ptir > val, na.rm = TRUE) + 1L
-          }, integer(1))
+            if (is.na(val)) return(NA_character_)
+            rank_label(val, xfer_ptir_pool(seasons_df$Year[i]))
+          }, character(1))
 
           seasons_df$ptir_xfer_role_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
-            if (!isTRUE(seasons_df$is_transfer_out[i]) || !xfer_col_exists) return(NA_integer_)
-            yr   <- seasons_df$Year[i]
+            if (!isTRUE(seasons_df$is_transfer_out[i])) return(NA_character_)
             val  <- seasons_df$ptir[i]
             role <- seasons_df$Role[i]
-            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_integer_)
-            all_ptir <- player_stats_all_with_composites %>%
-              dplyr::filter(Year == yr, .data[[xfer_out_col]] == TRUE, Role == role, !is.na(ptir)) %>%
-              dplyr::pull(ptir)
-            sum(all_ptir > val, na.rm = TRUE) + 1L
-          }, integer(1))
+            if (is.na(val) || is.na(role) || !nzchar(role)) return(NA_character_)
+            rank_label(val, xfer_ptir_pool(seasons_df$Year[i], role))
+          }, character(1))
 
           tagList(
             tags$hr(style = "margin: 10px 0;"),
@@ -3519,7 +3569,7 @@ shinyServer(function(input, output, session) {
                 is_xfer_out      <- isTRUE(seasons_df$is_transfer_out[i])
 
                 rank_str <- if (!is.na(ptir_val)) {
-                  # Overall + role block: "#23 OVR (#5 Pure PG)"
+                  # Overall + role block: "#23 OVR (#5 Pure PG)" or "#T-1 OVR (#T-1 Pure PG)"
                   ovr_block <- if (!is.na(ptir_rank)) {
                     role_str <- if (!is.na(ptir_role_rank) && !is.na(role) && nzchar(role)) {
                       paste0(" (#", ptir_role_rank, " ", role, ")")
