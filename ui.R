@@ -509,7 +509,7 @@ shinyUI(
 
     @media (min-width: 992px) {
       .profile-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         align-items: start;
       }
     }
