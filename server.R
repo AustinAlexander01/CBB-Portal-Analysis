@@ -2317,6 +2317,7 @@ shinyServer(function(input, output, session) {
     filtered_stats()
   })
 
+
   # --- Watchlist ---
   watchlist_rv <- reactiveVal(character(0))
 
@@ -3316,7 +3317,7 @@ shinyServer(function(input, output, session) {
     pct_df <- radar_percentile_data()
 
     player_ui_list <- lapply(players_to_show, function(player_name) {
-      row      <- pct_df %>% dplyr::filter(Name == player_name)
+      row <- pct_df %>% dplyr::filter(Name == player_name)
 
       if (nrow(row) == 0) {
         return(NULL)
@@ -3392,6 +3393,75 @@ shinyServer(function(input, output, session) {
         } else {
           tags$em("No major weaknesses")
         },
+        local({
+          player_pid <- if ("pid" %in% names(raw_row) && nrow(raw_row) > 0) {
+            p <- raw_row$pid[1]
+            if (!is.na(p) && nzchar(p)) p else NA_character_
+          } else NA_character_
+
+          if (is.na(player_pid)) return(NULL)
+
+          # Each season is a distinct Name in the DB (e.g. "Cooper Flagg (25) (Duke)").
+          # Fetch all seasons for this pid so we can link directly by Name — the same
+          # mechanism used by Most Similar Players (Drafted).
+          seasons_df <- player_stats_all_with_composites %>%
+            dplyr::filter(!is.na(pid) & pid == player_pid) %>%
+            dplyr::select(Name, Year, Team, ptir) %>%
+            dplyr::group_by(Name, Year, Team) %>%
+            dplyr::summarize(ptir = dplyr::first(ptir), .groups = "drop") %>%
+            dplyr::arrange(dplyr::desc(Year))
+
+          if (nrow(seasons_df) <= 1) return(NULL)
+
+          # Compute each season's national PTIR rank within its year.
+          seasons_df$ptir_rank <- vapply(seq_len(nrow(seasons_df)), function(i) {
+            yr  <- seasons_df$Year[i]
+            val <- seasons_df$ptir[i]
+            if (is.na(val)) return(NA_integer_)
+            all_ptir <- player_stats_all_with_composites %>%
+              dplyr::filter(Year == yr, !is.na(ptir)) %>%
+              dplyr::pull(ptir)
+            sum(all_ptir > val, na.rm = TRUE) + 1L
+          }, integer(1))
+
+          tagList(
+            tags$hr(style = "margin: 10px 0;"),
+            tags$h5("Player Seasons"),
+            tags$ul(
+              style = "padding-left: 18px; margin-bottom: 0;",
+              lapply(seq_len(nrow(seasons_df)), function(i) {
+                season_name <- seasons_df$Name[i]
+                yr   <- seasons_df$Year[i]
+                tm   <- seasons_df$Team[i]
+                ptir_val  <- seasons_df$ptir[i]
+                ptir_rank <- seasons_df$ptir_rank[i]
+                rank_str <- if (!is.na(ptir_val) && !is.na(ptir_rank)) {
+                  paste0(" - PTIR: ", round(ptir_val, 1), " (#", ptir_rank, ")")
+                } else if (!is.na(ptir_val)) {
+                  paste0(" - PTIR: ", round(ptir_val, 1))
+                } else ""
+                label <- paste0(yr, " \u2014 ", tm, rank_str)
+                if (season_name == player_name) {
+                  # Current season — bold, no link
+                  tags$li(tags$strong(label))
+                } else {
+                  # Prior/future season — fires identical event to similar_player_click
+                  tags$li(
+                    tags$a(
+                      href = "#",
+                      onclick = sprintf(
+                        "Shiny.setInputValue('similar_player_click', '%s', {priority: 'event'}); return false;",
+                        gsub("'", "\\'", season_name, fixed = TRUE)
+                      ),
+                      style = "cursor:pointer; font-weight:500;",
+                      label
+                    )
+                  )
+                }
+              })
+            )
+          )
+        }),
         tags$hr(style = "margin: 10px 0;"),
         fluidRow(
           column(
