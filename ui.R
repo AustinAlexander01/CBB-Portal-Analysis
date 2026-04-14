@@ -604,6 +604,7 @@ shinyUI(
       min-height: 480px !important;
       overflow: hidden !important;
     }
+    #radarPlot .js-plotly-plot,
     #radarPlot .plot-container,
     #radarPlot .svg-container {
       overflow: hidden !important;
@@ -948,6 +949,23 @@ shinyUI(
 $(document).on('shiny:disconnected', function() {
   setTimeout(function() { location.reload(); }, 2000);
 });
+")),
+        tags$script(HTML("
+(function() {
+  // After every Plotly render, force overflow:hidden on the chart containers
+  // so Chrome doesn't generate a scrollbar from Plotly's inline-styled divs.
+  function fixRadarOverflow() {
+    var el = document.getElementById('radarPlot');
+    if (!el) return;
+    ['js-plotly-plot', 'plot-container', 'svg-container'].forEach(function(cls) {
+      var nodes = el.getElementsByClassName(cls);
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].style.overflow = 'hidden';
+      }
+    });
+  }
+  document.addEventListener('plotly_afterplot', fixRadarOverflow, true);
+})();
 "))
       )
     ),
