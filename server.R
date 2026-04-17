@@ -670,27 +670,34 @@ barttorvik_logo_map <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo
 portal_logo_map     <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$portal_team_name)     else character(0)
 rm(.logo_df)
 
-# to_team_logo_map: to_team (raw portal string) -> logo_url
+# to_team_logo_map:  to_team (raw portal string) -> logo_url  (light-mode)
+# to_team_logo2_map: to_team (raw portal string) -> logo_2    (dark-mode optimized)
 # Built by JOINing directly on mbb_transfer_portal.to_team so that lookup
 # keys exactly match the strings portal_to_team_rv() returns at runtime,
 # bypassing any crosswalk portal_team_name string-matching ambiguity.
-to_team_logo_map <- tryCatch({
+to_team_logo_maps <- tryCatch({
   if (!is.null(supabase_pool)) {
     .tt_df <- DBI::dbGetQuery(
       supabase_pool,
-      "SELECT DISTINCT p.to_team, c.logo_url
+      "SELECT DISTINCT p.to_team, c.logo_url, c.logo_2
        FROM mbb_transfer_portal p
        JOIN mbb_institution_crosswalk c
          ON LOWER(TRIM(p.to_team)) = LOWER(TRIM(c.portal_team_name))
-       WHERE c.logo_url IS NOT NULL AND c.logo_url <> ''
-         AND p.to_team IS NOT NULL AND p.to_team <> ''"
+       WHERE p.to_team IS NOT NULL AND p.to_team <> ''
+         AND ( (c.logo_url IS NOT NULL AND c.logo_url <> '')
+            OR (c.logo_2   IS NOT NULL AND c.logo_2   <> '') )"
     )
-    if (nrow(.tt_df) > 0) setNames(.tt_df$logo_url, .tt_df$to_team) else character(0)
-  } else character(0)
+    list(
+      url = if (nrow(.tt_df) > 0) setNames(.tt_df$logo_url, .tt_df$to_team) else character(0),
+      v2  = if (nrow(.tt_df) > 0) setNames(.tt_df$logo_2,   .tt_df$to_team) else character(0)
+    )
+  } else list(url = character(0), v2 = character(0))
 }, error = function(e) {
-  warning("Could not load to_team logo map: ", conditionMessage(e))
-  character(0)
+  warning("Could not load to_team logo maps: ", conditionMessage(e))
+  list(url = character(0), v2 = character(0))
 })
+to_team_logo_map  <- to_team_logo_maps$url
+to_team_logo2_map <- to_team_logo_maps$v2
 
 load_player_stats_source <- function() {
   cache_path <- ".player_stats_cache.rds"
@@ -2452,13 +2459,16 @@ shinyServer(function(input, output, session) {
         df$ToTeam[is.na(df$ToTeam)] <- ""
         df$ToTeamLogo <- to_team_logo_map[df$ToTeam]
         df$ToTeamLogo[is.na(df$ToTeamLogo)] <- ""
+        df$ToTeamLogo2 <- if (length(to_team_logo2_map) > 0) to_team_logo2_map[df$ToTeam] else character(nrow(df))
+        df$ToTeamLogo2[is.na(df$ToTeamLogo2)] <- ""
         # Mark confirmed portal players with no destination so the filter dropdown
         # can select for them; the JS cell renderer suppresses the display text.
         if ("Portal" %in% names(df))
           df$ToTeam[df$ToTeam == "" & as.character(df$Portal) == "Yes"] <- "(Uncommitted)"
       } else {
-        df$ToTeam     <- character(nrow(df))
-        df$ToTeamLogo <- character(nrow(df))
+        df$ToTeam      <- character(nrow(df))
+        df$ToTeamLogo  <- character(nrow(df))
+        df$ToTeamLogo2 <- character(nrow(df))
       }
       if (isTRUE(input$uncommitted_only) && "ToTeam" %in% names(df))
         df <- df[df$ToTeam == "(Uncommitted)", , drop = FALSE]
@@ -2556,7 +2566,7 @@ shinyServer(function(input, output, session) {
         names(df)
       )
       # Include hidden logo helper columns so JS cell renderers can access them
-      logo_helper_cols <- intersect(c("TeamLogo", "ToTeamLogo"), names(df))
+      logo_helper_cols <- intersect(c("TeamLogo", "ToTeamLogo", "ToTeamLogo2"), names(df))
       pid_col          <- intersect("pid", names(df))
       table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols, logo_helper_cols, pid_col))
 
@@ -2764,9 +2774,12 @@ shinyServer(function(input, output, session) {
         }")
       )
       # Hidden helper columns — values accessible in JS cell renderers via cellInfo.row
-      col_defs[["TeamLogo"]]   <- reactable::colDef(show = FALSE)
-      col_defs[["ToTeamLogo"]] <- reactable::colDef(show = FALSE)
-      # To Team column — shows destination logo + portal team name
+      col_defs[["TeamLogo"]]    <- reactable::colDef(show = FALSE)
+      col_defs[["ToTeamLogo"]]  <- reactable::colDef(show = FALSE)
+      col_defs[["ToTeamLogo2"]] <- reactable::colDef(show = FALSE)
+      # To Team column — renders both light (logo_url) and dark (logo_2) images;
+      # CSS in ui.R (keyed on html.dark-mode) handles the swap and cell-background
+      # flip without re-rendering the table on dark-mode toggle.
       if ("ToTeam" %in% names(table_df)) {
         col_defs[["ToTeam"]] <- reactable::colDef(
           name = "To Team",
@@ -2776,22 +2789,31 @@ shinyServer(function(input, output, session) {
           filterInput = reactable::JS("multiSelectFilter"),
           html = TRUE,
           headerStyle = list(whiteSpace = "nowrap"),
-          style = reactable::JS("function(rowInfo) {
-            var logo = rowInfo.values['ToTeamLogo'] || '';
-            return logo ? { background: '#ffffff', overflow: 'visible' } : null;
+          class = reactable::JS("function(rowInfo) {
+            var hasLight = !!(rowInfo.values['ToTeamLogo']);
+            var hasDark  = !!(rowInfo.values['ToTeamLogo2']);
+            if (hasLight && hasDark) return 'tt-cell tt-cell-dual';
+            if (hasLight)            return 'tt-cell tt-cell-light-only';
+            if (hasDark)             return 'tt-cell tt-cell-dark-only';
+            return null;
           }"),
           cell = reactable::JS("function(cellInfo) {
-            var logo = cellInfo.row['ToTeamLogo'] || '';
-            var name = String(cellInfo.value || '');
+            var logoL = cellInfo.row['ToTeamLogo']  || '';
+            var logoD = cellInfo.row['ToTeamLogo2'] || '';
+            var name  = String(cellInfo.value || '');
             if (!name || name === '(Uncommitted)') return '';
-            if (logo) {
-              return '<div style=\"position:relative;height:100%;overflow:visible\">' +
-                '<img src=\"' + logo + '\" title=\"' + name + '\"' +
-                ' style=\"position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;object-fit:contain\" /></div>';
+            if (!logoL && !logoD) {
+              var fs = name.length > 22 ? '9px' : name.length > 17 ? '10px' : '11px';
+              return '<span style=\"font-size:' + fs + ';white-space:nowrap;overflow:hidden;' +
+                'text-overflow:ellipsis;display:block;width:100%\">' + name + '</span>';
             }
-            var fs = name.length > 22 ? '9px' : name.length > 17 ? '10px' : '11px';
-            return '<span style=\"font-size:' + fs + ';white-space:nowrap;overflow:hidden;' +
-              'text-overflow:ellipsis;display:block;width:100%\">' + name + '</span>';
+            var imgStyle = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+              'width:38px;height:38px;object-fit:contain';
+            var html = '<div style=\"position:relative;height:100%;overflow:visible\">';
+            if (logoL) html += '<img class=\"ttl-light\" src=\"' + logoL + '\" title=\"' + name + '\" style=\"' + imgStyle + '\" />';
+            if (logoD) html += '<img class=\"ttl-dark\"  src=\"' + logoD + '\" title=\"' + name + '\" style=\"' + imgStyle + '\" />';
+            html += '</div>';
+            return html;
           }")
         )
       }

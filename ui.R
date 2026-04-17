@@ -566,6 +566,20 @@ shinyUI(
       border-color: var(--border-col) !important;
     }
 
+    /* To Team logo swap: light (logo_url) by default, dark (logo_2) in dark mode */
+    .ttl-dark { display: none; }
+    /* Only hide the light image when a dark-optimized replacement is available */
+    html.dark-mode .tt-cell-dual .ttl-light { display: none; }
+    html.dark-mode .tt-cell-dual .ttl-dark,
+    html.dark-mode .tt-cell-dark-only .ttl-dark { display: inline-block; }
+
+    /* Cell background tracks which logo is actually visible */
+    .reactable .rt-td.tt-cell-dual,
+    .reactable .rt-td.tt-cell-light-only { background: #ffffff !important; overflow: visible; }
+    .reactable .rt-td.tt-cell-dark-only  { overflow: visible; }
+    /* Dark mode with a dark-optimized logo: no forced white background */
+    html.dark-mode .reactable .rt-td.tt-cell-dual { background: transparent !important; }
+
     /* Plotly containers and SVG text in dark mode */
     html.dark-mode .js-plotly-plot,
     html.dark-mode .plotly,
