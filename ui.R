@@ -573,6 +573,12 @@ shinyUI(
     html.dark-mode .tt-cell-dual .ttl-dark,
     html.dark-mode .tt-cell-dark-only .ttl-dark { display: inline-block; }
 
+    /* Team col logo swap: same pattern as To Team, no forced cell background */
+    .tl-dark { display: none; }
+    html.dark-mode .team-cell-dual .tl-light { display: none; }
+    html.dark-mode .team-cell-dual .tl-dark,
+    html.dark-mode .team-cell-dark-only .tl-dark { display: inline-block; }
+
     /* Cell background tracks which logo is actually visible */
     .reactable .rt-td.tt-cell-dual,
     .reactable .rt-td.tt-cell-light-only { background: #ffffff !important; overflow: visible; }

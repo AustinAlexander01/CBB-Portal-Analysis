@@ -648,26 +648,29 @@ if (!is.null(DB_BASKETBALL_COLS)) {
 
 # ---------------------------------------------------------------------------
 # Team logo lookup maps — loaded once at startup from mbb_institution_crosswalk.
-# barttorvik_logo_map: barttorvik_team_name  -> logo_url  (for "Team" column)
-# portal_logo_map:     portal_team_name      -> logo_url  (for "To Team" column)
+# barttorvik_logo_map:  barttorvik_team_name -> logo_url  (light-mode, "Team" col)
+# barttorvik_logo2_map: barttorvik_team_name -> logo_2    (dark-mode, "Team" col)
+# portal_logo_map:      portal_team_name     -> logo_url  ("To Team" col)
 # ---------------------------------------------------------------------------
 .logo_df <- tryCatch({
   if (!is.null(supabase_pool)) {
     DBI::dbGetQuery(
       supabase_pool,
-      "SELECT barttorvik_team_name, portal_team_name, logo_url
+      "SELECT barttorvik_team_name, portal_team_name, logo_url, logo_2
        FROM mbb_institution_crosswalk
-       WHERE logo_url IS NOT NULL AND logo_url <> ''"
+       WHERE (logo_url IS NOT NULL AND logo_url <> '')
+          OR (logo_2   IS NOT NULL AND logo_2   <> '')"
     )
   } else {
-    data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character())
+    data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character(), logo_2 = character())
   }
 }, error = function(e) {
   warning("Could not load team logos: ", conditionMessage(e))
-  data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character())
+  data.frame(barttorvik_team_name = character(), portal_team_name = character(), logo_url = character(), logo_2 = character())
 })
-barttorvik_logo_map <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$barttorvik_team_name) else character(0)
-portal_logo_map     <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$portal_team_name)     else character(0)
+barttorvik_logo_map  <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$barttorvik_team_name) else character(0)
+barttorvik_logo2_map <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_2,   .logo_df$barttorvik_team_name) else character(0)
+portal_logo_map      <- if (nrow(.logo_df) > 0) setNames(.logo_df$logo_url, .logo_df$portal_team_name)     else character(0)
 rm(.logo_df)
 
 # to_team_logo_map:  to_team (raw portal string) -> logo_url  (light-mode)
@@ -2444,12 +2447,15 @@ shinyServer(function(input, output, session) {
       }
 
       # --- Attach team logo URLs and To Team column ----------------------------
-      # TeamLogo: barttorvik team name -> ESPN logo URL
+      # TeamLogo  (light-mode) / TeamLogo2 (dark-mode): barttorvik team name -> logo URLs
       if ("Team" %in% names(df) && length(barttorvik_logo_map) > 0) {
         df$TeamLogo <- barttorvik_logo_map[as.character(df$Team)]
         df$TeamLogo[is.na(df$TeamLogo)] <- ""
+        df$TeamLogo2 <- if (length(barttorvik_logo2_map) > 0) barttorvik_logo2_map[as.character(df$Team)] else character(nrow(df))
+        df$TeamLogo2[is.na(df$TeamLogo2)] <- ""
       } else {
-        df$TeamLogo <- character(nrow(df))
+        df$TeamLogo  <- character(nrow(df))
+        df$TeamLogo2 <- character(nrow(df))
       }
       # ToTeam: pid -> to_team text (from reactive), then logo via to_team_logo_map
       if ("pid" %in% names(df)) {
@@ -2566,7 +2572,7 @@ shinyServer(function(input, output, session) {
         names(df)
       )
       # Include hidden logo helper columns so JS cell renderers can access them
-      logo_helper_cols <- intersect(c("TeamLogo", "ToTeamLogo", "ToTeamLogo2"), names(df))
+      logo_helper_cols <- intersect(c("TeamLogo", "TeamLogo2", "ToTeamLogo", "ToTeamLogo2"), names(df))
       pid_col          <- intersect("pid", names(df))
       table_cols <- unique(c("Name", meta_cols, comp_cols, raw_stat_cols, logo_helper_cols, pid_col))
 
@@ -2754,6 +2760,9 @@ shinyServer(function(input, output, session) {
         col_defs[["is_transfer_out"]] <- reactable::colDef(show = FALSE)
       }
 
+      # Team column — renders both light (logo_url) and dark (logo_2) images;
+      # CSS in ui.R (keyed on html.dark-mode) handles the swap without re-rendering
+      # the table on dark-mode toggle. Same pattern as the To Team column below.
       col_defs[["Team"]] <- reactable::colDef(
         name = "Team",
         minWidth = 110, maxWidth = 150,
@@ -2761,20 +2770,31 @@ shinyServer(function(input, output, session) {
         filterMethod = reactable::JS("filterMulti"),
         filterInput = reactable::JS("multiSelectFilter"),
         html = TRUE,
+        class = reactable::JS("function(rowInfo) {
+          var hasLight = !!(rowInfo.values['TeamLogo']);
+          var hasDark  = !!(rowInfo.values['TeamLogo2']);
+          if (hasLight && hasDark) return 'team-cell team-cell-dual';
+          if (hasLight)            return 'team-cell team-cell-light-only';
+          if (hasDark)             return 'team-cell team-cell-dark-only';
+          return null;
+        }"),
         cell = reactable::JS("function(cellInfo) {
-          var logo = cellInfo.row['TeamLogo'] || '';
-          var name = String(cellInfo.value || '');
+          var logoL = cellInfo.row['TeamLogo']  || '';
+          var logoD = cellInfo.row['TeamLogo2'] || '';
+          var name  = String(cellInfo.value || '');
           var nameSpan = '<span style=\"font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">' + name + '</span>';
-          if (logo) {
-            return '<div style=\"display:flex;align-items:center;gap:5px\">' +
-              '<img src=\"' + logo + '\" style=\"width:20px;height:20px;object-fit:contain;flex-shrink:0\" />' +
-              nameSpan + '</div>';
-          }
-          return nameSpan;
+          if (!logoL && !logoD) return nameSpan;
+          var imgStyle = 'width:20px;height:20px;object-fit:contain;flex-shrink:0';
+          var html = '<div style=\"display:flex;align-items:center;gap:5px\">';
+          if (logoL) html += '<img class=\"tl-light\" src=\"' + logoL + '\" style=\"' + imgStyle + '\" />';
+          if (logoD) html += '<img class=\"tl-dark\"  src=\"' + logoD + '\" style=\"' + imgStyle + '\" />';
+          html += nameSpan + '</div>';
+          return html;
         }")
       )
       # Hidden helper columns — values accessible in JS cell renderers via cellInfo.row
       col_defs[["TeamLogo"]]    <- reactable::colDef(show = FALSE)
+      col_defs[["TeamLogo2"]]   <- reactable::colDef(show = FALSE)
       col_defs[["ToTeamLogo"]]  <- reactable::colDef(show = FALSE)
       col_defs[["ToTeamLogo2"]] <- reactable::colDef(show = FALSE)
       # To Team column — renders both light (logo_url) and dark (logo_2) images;
